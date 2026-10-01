@@ -8,19 +8,19 @@ function harness(file,state={}){
   state.usaOnly??='off';state.followerReview??='off';
   const elements={};
   const windowListeners={};
-  let listener;
+  let listener,installedListener;
   const element=id=>elements[id] ||= {value:'',textContent:'',listeners:{},addEventListener(name,fn){this.listeners[name]=fn},classList:{contains:()=>true}};
   const ctx=vm.createContext({console,URL,Date,Set,JSON,Math,Number,String,Promise,
     document:{getElementById:element,body:{classList:{contains:()=>true}},querySelectorAll:()=>[],querySelector:()=>null},
     location:{href:'https://x.com/i/chat/123',pathname:'/i/chat/123'},
     window:{addEventListener(name,fn){(windowListeners[name]||=[]).push(fn)}},alert(){},setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},
     chrome:{storage:{local:{async get(keys){return {...state}},async set(p){Object.assign(state,p)},async remove(keys){(Array.isArray(keys)?keys:[keys]).forEach(k=>delete state[k])}}},
-      runtime:{onMessage:{addListener(fn){listener=fn}},sendMessage:async()=>({tabId:1})},
-      tabs:{get:async()=>({id:1,status:'complete',url:'https://x.com/alice'}),query:async()=>[{id:1}],update:async()=>{} }}});
+      runtime:{onMessage:{addListener(fn){listener=fn}},onInstalled:{addListener(fn){installedListener=fn}},sendMessage:async()=>({tabId:1})},
+      tabs:{get:async()=>({id:1,status:'complete',url:'https://x.com/alice'}),query:async()=>[{id:1}],update:async()=>{},reload(){} }}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','progress.js'),'utf8'),ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx);
   return {ctx,state,element,run:code=>vm.runInContext(code,ctx),message:msg=>new Promise(resolve=>listener(msg,{},resolve)),
-    dispatchWindow(name,event){for(const fn of windowListeners[name]||[]) fn(event)}};
+    dispatchWindow(name,event){for(const fn of windowListeners[name]||[]) fn(event)},dispatchInstalled(details){installedListener?.(details)}};
 }
 
 test('delayed composer must become stable and gain focus',async()=>{
@@ -1637,6 +1637,15 @@ test('LLM response handler removes em dashes from messages and all metadata befo
 test('LLM normalization preserves hyphens and line breaks',()=>{
   const h=harness('background.js');
   assert.equal(h.run("cleanLlmOutput('one-to-one\\nNew paragraph')"),'one-to-one\nNew paragraph');
+});
+
+test('extension updates reload existing X tabs so stale content scripts are replaced',()=>{
+  const h=harness('background.js');
+  h.run(`let reloaded=[];
+    chrome.tabs.query=(query,done)=>done([{id:11},{id:12}]);
+    chrome.tabs.reload=(id,done)=>{reloaded.push(id);done()}`);
+  h.dispatchInstalled({reason:'update'});
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(reloaded)')),[11,12]);
 });
 
 test('accepted editor insertion does not dispatch a second insertion before React renders',async()=>{

@@ -5,6 +5,17 @@ function cleanLlmOutput(value){
   if(value&&typeof value==='object') return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,cleanLlmOutput(item)]));
   return value;
 }
+
+// Manifest content scripts are not injected again into tabs that were already
+// open when an unpacked extension is reloaded. Reload those X tabs on updates so
+// Chrome cannot leave the invalidated previous build running in the page.
+chrome.runtime.onInstalled.addListener(({reason})=>{
+  if(reason!=='update') return;
+  chrome.tabs.query({url:['https://x.com/*']},tabs=>{
+    void chrome.runtime.lastError;
+    for(const tab of tabs||[]) if(tab.id) chrome.tabs.reload(tab.id,()=>void chrome.runtime.lastError);
+  });
+});
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
   if(msg.type==='TAB_ID'){send({tabId:sender.tab?.id});return}
   if(msg.type!=='OPENAI_DRAFT') return;
