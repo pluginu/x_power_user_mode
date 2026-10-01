@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "SIN Outreach Assistant",
+  "version": "1.9.18",
+  "description": "SIN outreach assistant with persistent state, complete backup, side-panel UI, AI drafting, and direct profile-to-DM preparation.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://api.openai.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*"
+      ],
+      "js": [
+        "progress.js",
+        "content.js",
+        "timeline.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}

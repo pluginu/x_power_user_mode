@@ -1,0 +1,153 @@
+## v1.9.18: manual engagement and staged DM review
+
+In **Outreach workflow**, select **Follow review · no DMs** or **Staged outreach · manual approval**. Changing modes pauses the existing queue and turns automatic sending off. Review modes do not automate likes, comments, or follows.
+
+1. Add handles to Profiles. Click **Start** or **Open next for review** to visit the next profile without a recorded follow.
+2. Engage manually on X. Enter the review handle and the post URL, then click **Record like** or **Record comment**. Click **Record follow** after following. Records are your confirmations, not automatically verified X activity. Duplicate interactions on the same post do not increase counts. **Undo last record** corrects mistakes.
+3. Click **Open next for review** to continue. You can revisit any profile using its review button.
+4. In staged mode, set required distinct liked posts, commented posts, and the waiting period in days. A recorded follow is required. The waiting period begins at the first recorded interaction; deleting that record recalculates it. The queue shows eligibility and the local eligibility time, refreshed every minute.
+5. Once eligible, open the profile, **Collect + save profile**, **Generate tailored draft**, **Prepare DM**, then **Send & Next** to approve that one DM. No automatic DM is triggered when time expires. Follow-review mode blocks drafting, preparing, and sending DMs entirely.
+
+Enable **Timeline matches** to mark posts from listed authors as you browse X's Home timeline, including For You and Following. This scans loaded posts every three seconds while the tab is open; it does not scroll, search, click, or monitor a closed browser. Use the matched post directly, then record your interaction in the panel.
+
+Engagement records survive restarts and complete backups. Reset progress also removes them. Reload the extension and refresh X tabs after updating. Local tests mock the browser; live X UI verification remains necessary.
+
+## Message length and optional reference
+
+Choose **Short** (30–45 words), **Usual** (60–90 words, the default), or **Extra long** (150–220 words) in Message options. These are generation targets, not hard truncation limits.
+
+Paste reference text or upload a UTF-8 `.txt` or `.md` file (up to 20,000 characters), then set **Reference text** to **Use reference text**. To use only part, highlight a passage in the reference box and click **Keep selected passage**. You can edit the text, switch it off without deleting it, or clear it. Reference text guides tone and wording; profile and project facts remain the source for factual claims.
+
+Options save automatically, sync between the popup and side panel, and apply to subsequent manual and automatic drafts. Existing drafts stay as generated until you regenerate them. Enabled reference text is sent with the generation request; saved reference text is included in complete backups.
+
+# v1.9.17 — Automatically skip nonexistent accounts throughout preparation
+
+- “This account doesn’t exist” (also with a straight apostrophe) saves `account_not_found` and advances the running queue without a prompt, including when a profile header remains visible or the notice appears during DM preparation.
+- Missing and suspended records stay excluded after reopening. Stale drafts cannot send to either status.
+- Reload the extension in place and refresh X to activate **v1.9.17**.
+
+# v1.9.16 — Recover profile navigation after redirects and resume
+
+- Start reopens a profile left in the loading step with a fresh timeout instead of resuming an expired wait.
+- If X finishes on Home or another wrong route, the queue retries profile navigation up to three times, allowing five seconds between attempts. It waits for in-flight navigation instead of repeatedly reloading it.
+- Debug logs now include the requested profile URL, tab, attempt, browser response, and route mismatches.
+- Reload the extension in place, refresh X, then click Start to activate **v1.9.16** and retry the saved record.
+
+# v1.9.15 — Skip suspended accounts
+
+- An explicit **Account suspended** notice on the target profile saves `account_suspended` and advances the running queue without waiting for a profile timeout, drafting, or sending. Notices appearing during DM preparation are handled too.
+- Suspended records remain excluded after reopening the extension and are included in saved progress and exports.
+- Reload the extension in place and refresh X to activate **v1.9.15**.
+
+# v1.9.14 — Startup and stale-window persistence fixes
+
+- Saving now waits for stored settings and progress to finish loading. An idle popup only writes settings actually edited there, so it cannot overwrite a newer queue from the side panel.
+- Next-recipient selection reads the queue from storage and checks durable processed records. Separate popup/panel regression tests verify that stale windows cannot restart an old queue.
+- Reload the existing extension in place, refresh X, and verify **v1.9.14** in the panel. The **Saved progress** counter shows the restored records for the queue.
+
+# v1.9.13 — Durable progress across reloads
+
+- Completed recipient records are saved under independent storage keys. Overlapping writes to the older shared profile map cannot erase contact/skip history. The X content script saves successful sends directly before returning to the panel, so closing or reloading the panel does not lose the result.
+- Opening the extension loads these records, migrates older contact flags and case variants, and recovers saved `sent` jobs even if the current-profile pointer is missing. Queue selection and stale saved positions both skip processed recipients. Start restores valid collection/draft checkpoints instead of replacing them with stale UI values.
+- **Saved progress** shows processed and remaining recipients for the current queue. Complete backups include the durable records; profile exports merge them into the exported records. Only **Reset progress** intentionally clears this history.
+- Update the existing unpacked extension in place: reload it in `chrome://extensions`, refresh X, and reopen the side panel. Verify **v1.9.13**. Progress is stored in Chrome's extension-local storage, not in the source folder. Removing the extension or loading it as a different extension requires exporting/importing a Complete Backup to preserve that data.
+- Reload regression tests cover panel closure during a send, stale queue positions, overlapping map writes, legacy records, checkpoint restoration, completed queues, and explicit reset. Live X messages were not sent during testing.
+
+# v1.9.12 — Automatic sending and queue recovery
+
+- Enable **Automatically send messages**, then click **Start**. The saved toggle is off by default and is shared by the popup and side panel. Enabling it during a running queue also sends the current ready draft. With it off, each recipient still needs **Send & Next**.
+- Keep the side panel open and X available while running. Pause/Stop prevents further automatic sends; a click already dispatched to X cannot be recalled. Finishing that send no longer restarts a paused/stopped queue.
+- Automatic mode retries loading/drafting/preparation failures twice, with 10- and 20-second backoffs. After that, it saves `needs_review` and the error, then advances. Send failures or interrupted sends with an unknown result go directly to `needs_review` and are never automatically retried. These records are excluded from subsequent queues; inspect their conversation and saved errors before manually preparing them again. CSV/JSON exports include the errors and retry counts.
+- Saved successful sends are reconciled on reopening the panel, even if the response channel was lost. Incomplete sends have a deadline, unknown workflow states enter recovery, and stale preparation failures cannot overwrite a newer job. OpenAI fetches now abort after 110 seconds, within the panel's 120-second deadline.
+- Reload the extension in `chrome://extensions`, refresh X, and reopen the side panel. Verify **v1.9.12** before starting. Local tests use mocked browser/X behavior; no live messages were sent during validation.
+
+The sections below describe earlier versions; v1.9.12 behavior above supersedes their manual-only sending and pause-on-error descriptions.
+
+# v1.9.11 — Automatic preparation and diagnostics
+
+- Accounts showing X’s “This account doesn’t exist” notice are saved as `account_not_found` and automatically skipped on this and future queue runs.
+
+- **Start** automatically collects, drafts, and prepares each queued profile. **Prepare DM** also starts these steps for the open profile if collection/drafting have not finished. Once both checkpoints exist, Prepare DM reuses the current draft, including your edits. Only **Send & Next** sends a message, after your approval.
+- Profile loading allows up to 120 seconds and requires profile data to stay stable for 1.5 seconds. Message-button and composer discovery each allow up to 90 seconds. Draft generation allows 120 seconds. The preparation watchdog allows 6 minutes across navigation and editor retries; successful steps proceed immediately.
+- Preparation acknowledges its request immediately and reports progress through saved state, so page navigation does not require a long-lived response channel. Repeated Prepare DM clicks do not replace an active preparation job.
+- The panel shows its version and extension ID. **Test page connection** detects older content scripts and asks you to refresh X. **Export debug log** downloads UI/page diagnostics, workflow stage, timing, tab information, and errors without exporting the API-key setting. Page diagnostics use separate storage so UI logging cannot overwrite them.
+- Reload the extension in `chrome://extensions`, refresh X, reopen the side panel, and verify **v1.9.11** is shown. Keep X visible and the side panel open while the workflow runs.
+
+# SIN Outreach Assistant — DM readiness and automatic queue fix
+
+- **Start** opens the side panel and runs **Collect + save profile → Generate tailored draft → Prepare DM**, waiting for each action to finish. Starting an unfinished profile clears stale drafts and runs the full sequence again. Keep the side panel open while the queue runs; reopening it resumes the saved workflow.
+- When X shows **@recipient has a closed inbox** with **Not Now / Use X Number**, the extension clicks **Not Now**, saves `dm_unavailable` with reason `closed_inbox`, and automatically processes the next record. The saved profile and draft remain available, with `alternativeOutreachNeeded: true` and the notice evidence included in CSV/JSON exports. This does not mark the person contacted.
+- **Mark Contacted** saves the current contact and automatically starts processing the next uncontacted profile without sending a message.
+- **Send & Next** remains the manual approval for each recipient. If clicked while preparation is finishing, it waits instead of rejecting the `profile_message_clicked` stage. Send detection supports labeled controls, modern DM test IDs, and the composer form’s submit button. After approval, the extension waits for X to clear the draft, then automatically prepares the next profile using your configured pause.
+- DM preparation waits up to 90 seconds for a stable, editable message box, explicitly focuses it, and checks focus before insertion. It retries if X replaces the editor or drops the text, and only marks a draft prepared after the full text persists. On approval, Send-button detection polls the live editor for up to 60 seconds and rechecks the recipient, conversation, and reviewed text before clicking, so an icon-only Send control cannot leave a filled draft stuck in preparation.
+- Search fields are excluded from composer detection. Buttons receive one click per action. Preparation stays bound to its original X tab.
+- Pause/Stop suspend queue progression. A real loading, drafting, or preparation error pauses with a status message; fix it and click Start to retry. Preparation already in flight may finish, but never sends automatically.
+- If X does not clear the draft after Send, check the conversation before retrying. The extension does not repeat an uncertain send automatically.
+
+**Update:** Reload this unpacked extension in `chrome://extensions`, refresh the X tab, then click **Start**. No settings reset is needed.
+
+**Local checks:** `node --test tests/workflow.test.cjs` covers asynchronous composer readiness, focus, editor replacement, send guards, and the approval boundary. These are mocked browser checks; live X verification is still required.
+
+---
+
+# SIN Outreach Assistant v17
+
+This build fixes direct-DM composer detection on X. Prepare DM now prefers the currently focused editable element (the cursor-ready message box), then falls back across visible contenteditable/textbox/textarea editors, including open shadow roots. It no longer requires X to expose a specific `dmComposerTextInput` selector.
+
+# SIN Outreach Assistant v15
+
+This build fixes X Chat's three-panel **New chat** detection using X's exact current selector:
+
+`button[data-testid="dm-empty-conversation-new-chat-button"]`
+
+It also waits for the button through DOM mutations, then continues the saved Prepare DM job: New chat -> recipient search -> exact handle match -> conversation -> insert persisted draft.
+
+All v13 persistence, complete backup/import, profile history, settings, API key persistence, follow handling, and debug logging remain included.
+
+After loading/reloading the extension in `chrome://extensions`, refresh existing X tabs once so the new content script is injected.
+# SIN Outreach Assistant v13
+
+This build consolidates the previous fixes into one stateful workflow.
+
+## Key fixes
+
+- If X positively shows **Follow**, Generate Draft / Prepare DM now clicks Follow first instead of permanently blocking that profile.
+- Old `not_following` records are migrated to `follow_required` so they are not permanently skipped.
+- API key and all editable settings save automatically as you type. You do not need to click Save to keep them.
+- **Complete Backup really is complete**: it exports every value in `chrome.storage.local`, including the OpenAI API key when present. Treat the backup JSON like a password because it can contain that secret.
+- Complete Backup import clears the extension's current local storage and restores the backup exactly, avoiding stale mixed-version data.
+- Profile state uses one storage key (`profiles`) everywhere. Earlier builds mixed `profiles` and `profileDb`.
+- Debug log uses one string format everywhere instead of sometimes being a string and sometimes an array.
+- Prepare DM continues after popup closure and uses the X Chat UI: Chat landing page -> New chat -> recipient picker -> exact @handle -> conversation -> saved draft insertion.
+- Recipient search is scoped to the recipient dialog so the left-side Chat search box is not mistaken for the New Chat recipient field.
+- Send & Next verifies the pending prepared recipient before clicking Send.
+
+## Install / update
+
+1. Locate the `SIN-Outreach-Assistant` folder containing `manifest.json` (unzip first if needed).
+2. Open `chrome://extensions`.
+3. If replacing an existing SIN build, use **Export Backup** in that build first to preserve settings and progress, then disable it.
+4. Enable Developer mode and choose **Load unpacked**.
+5. Select `SIN-Outreach-Assistant`, the folder containing `manifest.json`.
+6. If replacing an existing build, use **Import Backup** in the newly loaded extension to restore your saved data.
+7. Refresh any already-open X tabs once, then use **Test page connection** to verify the connection.
+
+### After renaming or moving the folder
+
+The plugin uses relative asset paths and does not require a particular root folder name. Chrome must still load the correct folder: use **Load unpacked** to select its new location if the existing registration points elsewhere. Follow the backup and restore steps above when replacing an existing registration. Keep only the intended SIN build enabled.
+
+Run local checks with `node --test tests/workflow.test.cjs` from the plugin folder, or pass the absolute path to that test file from another directory.
+
+## Backup security
+
+The Complete Backup intentionally contains **all extension-local data**, including the OpenAI API key if one is stored. Keep the backup private. The profile CSV/JSON exports remain separate and are intended for profile records rather than extension secrets/settings.
+
+
+## v15 direct profile DM fix
+Prepare DM no longer opens generic X Chat or searches for the recipient. It returns to the saved X profile when needed, finds that profile's Message button, clicks it, waits for the direct conversation composer, and inserts the persisted draft. The pending job survives popup closure and full-page navigation.
+
+
+## v17 side panel + timer fix
+- Added Chrome Side Panel support. Use **Open in Side Panel** from the toolbar popup. The side panel stays open while you interact with X, so the toolbar popup no longer steals focus from the page.
+- Removed the hard-coded 10-second minimum delay from both the HTML controls and JavaScript. Values below 10 seconds now work; 0 seconds is allowed.
+- The side panel uses the exact same persistent state, profile database, generated draft, API key, backup/import, logs, and workflow as the popup.
