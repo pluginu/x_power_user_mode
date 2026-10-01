@@ -1,8 +1,12 @@
 async function reviewSettings(){await uiReady;return {requiredLikes:2,requiredComments:1,engagementDays:3,...await chrome.storage.local.get(null)}}
 function verifiedEvents(s,h){return (s[ENGAGEMENT_PREFIX+h]||[]).filter(e=>e.confirmed===true)}
+function postEngagementComplete(s,h){
+  const r=engagementEligibility(s,verifiedEvents(s,h));
+  return r.likes>=Number(s.requiredLikes||0)&&r.comments>=Number(s.requiredComments||0);
+}
 function engagementComplete(s,h){
   const r=engagementEligibility(s,verifiedEvents(s,h));
-  return r.followed&&(s.outreachMode==='follow_review'||r.likes>=Number(s.requiredLikes||0)&&r.comments>=Number(s.requiredComments||0));
+  return r.followed&&(s.outreachMode==='follow_review'||postEngagementComplete(s,h));
 }
 function reviewAction(fn){return async()=>{try{await fn()}catch(e){status(e.message)}}}
 const ENGAGEMENT_OUTCOME_PREFIX='engagementOutcome:';
@@ -62,10 +66,8 @@ async function runEngagementQueue(){
           if(!r.ok) throw new Error(r.error||`${action} failed.`);
           return r;
         };
-        status(`Following @${handle} and checking X confirmation…`);
-        await action('follow');
         s=await live();
-        if(s.outreachMode==='staged_review'){
+        if(s.outreachMode!=='follow_review'&&!postEngagementComplete(s,handle)){
           let posts=[],loadedArticles=0;
           status(`Waiting for original posts by @${handle}…`);
           for(let attempt=0;attempt<30;attempt++){
@@ -73,7 +75,7 @@ async function runEngagementQueue(){
             if(posts.length) break;
             await reviewSleep(1000);
           }
-          if(!posts.length&&!engagementComplete(await live(),handle)) throw new Error(`@${handle}: found no eligible original posts among ${loadedArticles} loaded articles after 30 seconds. Queue paused on this profile. Check whether X loaded its posts; reposts and quoted authors are excluded.`);
+          if(!posts.length&&!postEngagementComplete(await live(),handle)) throw new Error(`@${handle}: found no eligible original posts among ${loadedArticles} loaded articles after 30 seconds. Queue paused on this profile. Check whether X loaded its posts; reposts and quoted authors are excluded.`);
           for(const post of posts){
             s=await live();
             let events=verifiedEvents(s,handle),counts=engagementEligibility(s,events);
@@ -90,10 +92,12 @@ async function runEngagementQueue(){
               if(!draft.ok) throw new Error(draft.error);
               await action('comment',{post:post.post,text:draft.text});
             }
-            if(engagementComplete(await live(),handle)) break;
+            if(postEngagementComplete(await live(),handle)) break;
           }
-          if(!engagementComplete(await live(),handle)) throw new Error(`@${handle}: configured engagement is incomplete after checking ${posts.length} eligible loaded posts. Queue paused on this profile; confirmed actions are saved. Load more original posts or adjust the required counts, then resume.`);
+          if(!postEngagementComplete(await live(),handle)) throw new Error(`@${handle}: configured engagement is incomplete after checking ${posts.length} eligible loaded posts. Queue paused on this profile; confirmed actions are saved. Load more original posts or adjust the required counts, then resume.`);
         }
+        status(`Following @${handle} and checking X confirmation…`);
+        await action('follow');
         totals.completed++;
         await saveEngagementOutcome(handle,'complete',s.outreachMode==='follow_review'?'Follow confirmed. Follow-only mode does not like or comment.':'Configured follows, likes, and comments confirmed.');
         await renderReview();
@@ -103,7 +107,7 @@ async function runEngagementQueue(){
         while(Date.now()<due){await live();await reviewSleep(Math.min(1000,due-Date.now()))}
       }
       await live();await chrome.storage.local.set({runState:'paused'});
-      status(`Engagement pass: ${totals.completed} completed, ${totals.filtered} filtered out, ${totals.already} already complete, ${totals.unavailable} unavailable or previously contacted. ${totals.filtered?'See each profile’s filter reason below. ':''}${initial.outreachMode==='follow_review'?'Follow-only mode: likes and comments are disabled.':'Staged DMs still require the waiting period and approval.'}`);
+      status(`Engagement pass: ${totals.completed} completed, ${totals.filtered} filtered out, ${totals.already} already complete, ${totals.unavailable} unavailable or previously contacted. ${totals.filtered?'See each profile’s filter reason below. ':''}${initial.outreachMode==='follow_review'?'Follow-only mode: likes and comments are disabled.':initial.outreachMode==='engage_follow'?'Likes and comments completed before following. No DMs.':'Staged DMs still require the waiting period and approval.'}`);
     }catch(e){
       const s=await reviewSettings();
       if(s.engagementRunId===runId){if(s.runState==='running') await chrome.storage.local.set({runState:'paused'});if(activeHandle) await saveEngagementOutcome(activeHandle,'paused',e.message);status(e.message)}
@@ -133,20 +137,21 @@ async function startEngagementQueue(){
 }
 async function renderReview(){
   const s=await reviewSettings(),engagement=reviewMode(s);
-  const startLabel=s.outreachMode==='follow_review'?'Start automatic follows':'Start automatic engagement';
+  const startLabel=s.outreachMode==='follow_review'?'Start automatic follows':s.outreachMode==='engage_follow'?'Start likes + comments → follow':'Start automatic engagement';
   $('start').textContent=engagement?startLabel:'Start';
   $('reviewNext').textContent=startLabel;
   $('next').textContent=engagement?'Resume engagement':'Open next';
   $('workflowHelp').textContent=s.outreachMode==='follow_review'
-    ? 'Follow-only mode: Start follows eligible profiles. Likes and comments are disabled in this mode. Choose Automatic engagement · staged DMs to enable them. Audience filters can skip profiles; reasons appear below.'
-    : engagement ? 'Start runs the profile queue automatically: checks the audience, follows, and (in staged mode) likes posts and publishes generated replies. Only confirmed actions count. Keep this side panel open. Pause stops subsequent actions. Staged DMs still require approval.'
+    ? 'Follow-only mode: Start follows eligible profiles. Likes and comments are disabled in this mode. Choose Like + comment → follow · no DMs to enable them. Audience filters can skip profiles; reasons appear below.'
+    : s.outreachMode==='engage_follow' ? 'Start checks each profile, likes posts and publishes generated replies, then follows after the configured counts are confirmed. No DMs. Keep this side panel and X tab open.'
+    : engagement ? 'Start runs the profile queue automatically: checks the audience, likes posts and publishes generated replies, then follows. Only confirmed actions count. Keep this side panel open. Pause stops subsequent actions. Staged DMs still require approval.'
     : 'Start checks profiles, follows eligible accounts when needed, drafts and prepares DMs. Keep the side panel open. With automatic sending off, each prepared DM waits for Send & Next.';
   const selected=profileKey(s.reviewHandle);
   const summary=h=>{
     const r=engagementEligibility(s,verifiedEvents(s,h));
     const legacy=(s[ENGAGEMENT_PREFIX+h]||[]).filter(e=>!e.confirmed).length;
     const outcome=s[ENGAGEMENT_OUTCOME_PREFIX+h];
-    return `@${h}: ${outcome?outcome.state.toUpperCase()+': '+outcome.reason+' ':''}${r.likes} confirmed likes, ${r.comments} confirmed comments, ${r.followed?'following confirmed':'follow pending'}. ${r.eligible?'Eligible for DM review.':r.eligibleAt&&Date.now()<r.eligibleAt?'Waiting until '+new Date(r.eligibleAt).toLocaleString()+'.':'Requirements incomplete.'}${legacy?' '+legacy+' old manual records excluded.':''}`;
+    return `@${h}: ${outcome?outcome.state.toUpperCase()+': '+outcome.reason+' ':''}${r.likes} confirmed likes, ${r.comments} confirmed comments, ${r.followed?'following confirmed':'follow pending'}. ${s.outreachMode!=='staged_review'?'No DMs in this mode.':r.eligible?'Eligible for DM review.':r.eligibleAt&&Date.now()<r.eligibleAt?'Waiting until '+new Date(r.eligibleAt).toLocaleString()+'.':'Requirements incomplete.'}${legacy?' '+legacy+' old manual records excluded.':''}`;
   };
   $('engagementStatus').textContent=selected?summary(selected):'Start to automatically engage with profiles in your list.';
   const container=$('reviewQueue');container.replaceChildren();

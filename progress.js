@@ -52,7 +52,7 @@ async function restoreProcessedProfiles(){
 
 // Confirmed engagement is stored independently of collection/contact history.
 const ENGAGEMENT_PREFIX='engagement:';
-function reviewMode(settings){return ['follow_review','staged_review'].includes(settings.outreachMode)}
+function reviewMode(settings){return ['follow_review','engage_follow','staged_review'].includes(settings.outreachMode)}
 function engagementEligibility(settings,events=[],now=Date.now()){
   // Recompute from surviving records so undoing the first interaction also resets the waiting period.
   const count=value=>Math.max(0,Math.floor(Number(value)||0));
@@ -68,7 +68,7 @@ function engagementEligibility(settings,events=[],now=Date.now()){
 async function assertReviewDmAllowed(handle,automatic=false){
   // Read the latest mode at the action boundary; another popup or panel may have changed it.
   const s=await chrome.storage.local.get(null);
-  if(s.outreachMode==='follow_review') throw new Error('No-DM review mode is enabled.');
+  if(['follow_review','engage_follow'].includes(s.outreachMode)) throw new Error('No-DM review mode is enabled.');
   await assertAudienceAllowed(handle);
   if(s.outreachMode==='staged_review'){
     if(automatic) throw new Error('Staged outreach requires manual approval for each DM.');

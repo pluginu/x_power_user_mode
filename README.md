@@ -1,4 +1,4 @@
-# X Power User Plugin v1.9.24
+# X Power User Plugin v1.9.25
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -15,7 +15,13 @@ The plugin folder is `x_power_user_plugin`, matching the display name **X Power 
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.24** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.25** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.25: like and comment before following
+
+In **Outreach workflow → Mode**, choose **Like + comment → follow · no DMs**. Set **Likes before follow** and **Comments before follow** (0 skips that action), then click **Start**. Comments require an OpenAI API key. Both this mode and **Like + comment → follow · staged DMs** finish the configured post engagement before following. If posts or confirmations are missing, the queue pauses before following; confirmed progress survives resuming. Already-followed accounts remain followed. Existing follow-only settings stay follow-only until you select the new mode.
+
+Reload the extension, refresh X, and reopen the side panel to see the new controls. The DM wait applies only to staged DMs, which still require approval.
 
 ## v1.9.24: explain skipped engagement and find pinned posts
 

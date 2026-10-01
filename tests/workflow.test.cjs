@@ -1216,13 +1216,14 @@ function loadReview(h){
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','review.js'),'utf8'),h.ctx);
 }
 
-test('automatic queue follows and likes then advances without per-profile clicks',async()=>{
-  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice\nbob',requiredLikes:1,requiredComments:0});
+for(const mode of ['staged_review','engage_follow']) test(`${mode} likes and comments before following then advances`,async()=>{
+  const h=harness('popup.js',{outreachMode:mode,handles:'alice\nbob',requiredLikes:1,requiredComments:1,apiKey:'test-key'});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
   h.run(`let visits=[],actions=[],now=Date.now();Date=class extends Date {static now(){return now}};
     setTimeout=fn=>{now+=2000;fn();return 0};
     chrome.tabs.query=async()=>[{id:1,url:'https://x.com/home'}];
     chrome.tabs.update=async(id,o)=>visits.push(o.url);
+    runtimeMessage=async()=>({ok:true,text:'Relevant reply'});
     tabMessage=async(type,msg)=>{
       if(type==='PROFILE_READY') return {ok:true};
       if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:msg.handle}};
@@ -1235,9 +1236,9 @@ test('automatic queue follows and likes then advances without per-profile clicks
   await h.element('start').onclick();
   for(let i=0;i<10;i++) await new Promise(setImmediate);
   assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice','https://x.com/bob']));
-  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['follow:alice','posts:alice','like:alice','follow:bob','posts:bob','like:bob']));
+  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['posts:alice','like:alice','comment:alice','follow:alice','posts:bob','like:bob','comment:bob','follow:bob']));
   assert.equal(h.state.runState,'paused');
-  assert.equal(h.state['engagement:bob'].length,2);
+  assert.equal(h.state['engagement:bob'].length,3);
 });
 
 test('toolbar Start hands an automatic job to the side panel',async()=>{
@@ -1605,4 +1606,16 @@ test('follow-only mode explicitly labels its start buttons and explains that lik
   assert.equal(h.element('start').textContent,'Start automatic follows');
   assert.equal(h.element('reviewNext').textContent,'Start automatic follows');
   assert.match(h.element('workflowHelp').textContent,/Likes and comments are disabled/);
+});
+
+for(const mode of ['staged_review','engage_follow']) test(`${mode} does not follow when post requirements are incomplete`,async()=>{
+  const h=await queueFailureFixture({outreachMode:mode}, {}, [{post:'https://x.com/alice/status/123',text:'A post'}]);
+  assert.equal(h.state.runState,'paused');
+  assert.equal(h.run("actions.some(a=>a.startsWith('follow:'))"),false);
+  assert.match(h.state['engagementOutcome:alice'].reason,/configured engagement is incomplete/);
+});
+test('engage then follow mode blocks DM preparation and sending',async()=>{
+  const h=harness('content.js',{outreachMode:'engage_follow'});
+  await assert.rejects(h.run("assertReviewDmAllowed('alice')"),/No-DM/);
+  await assert.rejects(h.run("assertReviewDmAllowed('alice',true)"),/No-DM/);
 });
