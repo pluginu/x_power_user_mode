@@ -1721,6 +1721,16 @@ test('reply pauses before the actual submit click',async()=>{
   assert.equal(result.ok,true,result.error);
   assert.ok(h.run('clickedAt-readyAt')>=2300);
 });
+test('reply finds X alternate submit markup by button label',async()=>{
+  const h=replyFixture();
+  h.run(`submit.innerText='Reply';submit.textContent='Reply';
+    submit.getAttribute=name=>name==='aria-disabled'?null:name==='type'?'button':null;
+    dialog.querySelector=s=>s.includes('tweetTextarea')?box:null;
+    dialog.querySelectorAll=s=>s.includes('button')?[submit]:[{href:'https://x.com/alice/status/123'}];`);
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.equal(h.run('submitted'),1);
+});
 test('duplicated reply is never submitted or marked pending',async()=>{
   const h=replyFixture();h.run('insertIntoComposer=async(b,text)=>{b.value=text+text}');
   const result=await h.message({...likeJob,action:'comment',text:'Hello'});

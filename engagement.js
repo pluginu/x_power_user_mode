@@ -13,6 +13,21 @@ function engagementPostId(value){
 function currentReplyDialog(){
   return document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]')?.closest('[role="dialog"]')||null;
 }
+function replySubmitButton(dialog){
+  if(!dialog) return null;
+  const selectors=['[data-testid="tweetButton"]','[data-testid="tweetButtonInline"]','[data-testid^="tweetButton"]','button[type="submit"]','[role="button"][data-testid*="tweetButton"]'];
+  for(const selector of selectors){const candidate=dialog.querySelector(selector);if(candidate)return candidate}
+  return [...dialog.querySelectorAll('button,[role="button"]')].find(candidate=>{
+    const labels=[candidate.innerText,candidate.textContent,candidate.getAttribute?.('aria-label'),candidate.getAttribute?.('title')];
+    return labels.some(label=>/^\s*(reply|post)\s*$/i.test(String(label||'')));
+  })||null;
+}
+function replyReadinessDebug(dialog,box,expected){
+  const actual=readComposer(box),button=replySubmitButton(dialog);
+  return {editorConnected:!!box?.isConnected,editorMatches:actual===expected,expectedLength:expected.length,actualLength:actual.length,
+    buttonFound:!!button,buttonDisabled:!!button&&(!!button.disabled||button.getAttribute?.('aria-disabled')==='true'),
+    controls:[...dialog.querySelectorAll('button,[role="button"]')].slice(-20).map(el=>({text:String(el.innerText||el.textContent||'').trim().slice(0,60),aria:el.getAttribute?.('aria-label')||'',testid:el.getAttribute?.('data-testid')||'',type:el.getAttribute?.('type')||''}))};
+}
 async function engagementGuard(job,replyDialog=null){
   if(!/^[A-Za-z0-9_]{1,15}$/.test(job.handle||'')) throw new Error('Invalid profile handle.');
   const s=await chrome.storage.local.get(null);
@@ -110,12 +125,12 @@ async function executeEngagement(job){
     let stableSince=null;
     const button=await waitForElement(()=>{
       const liveBox=dialog.querySelector('[data-testid="tweetTextarea_0"]');
-      const submit=dialog.querySelector('[data-testid="tweetButton"],[data-testid="tweetButtonInline"]');
+      const submit=replySubmitButton(dialog);
       if(!box.isConnected||liveBox!==box||readComposer(box)!==job.text.trim()||!submit||submit.disabled||submit.getAttribute('aria-disabled')==='true'){stableSince=null;return null}
       stableSince??=Date.now();
       return Date.now()-stableSince>=800?submit:null;
-    },8000);
-    if(!button) throw new Error('Reply text or submit button is not ready. Close the reply dialog and resume; nothing was submitted.');
+    },20000);
+    if(!button) throw new Error(`Reply is not ready (${JSON.stringify(replyReadinessDebug(dialog,box,job.text.trim()))}). Close the reply dialog and resume; nothing was submitted.`);
     const oldLinks=new Set([...document.querySelectorAll('[data-testid="toast"] a[href*="/status/"]')].map(a=>a.href));
     await engagementGuard(job,dialog);
     if(!button.isConnected||readComposer(box)!==job.text.trim()) throw new Error('Reply changed before submission.');
