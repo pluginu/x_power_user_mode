@@ -5,6 +5,10 @@ function engagementComplete(s,h){
   return r.followed&&(s.outreachMode==='follow_review'||r.likes>=Number(s.requiredLikes||0)&&r.comments>=Number(s.requiredComments||0));
 }
 function reviewAction(fn){return async()=>{try{await fn()}catch(e){status(e.message)}}}
+const ENGAGEMENT_OUTCOME_PREFIX='engagementOutcome:';
+async function saveEngagementOutcome(handle,state,reason){
+  await chrome.storage.local.set({[ENGAGEMENT_OUTCOME_PREFIX+profileKey(handle)]:{state,reason,at:Date.now()}});
+}
 const reviewSleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let engagementLoopBusy=false;
 async function runEngagementQueue(){
@@ -17,12 +21,19 @@ async function runEngagementQueue(){
       if(s.runState!=='running'||!reviewMode(s)||s.engagementRunId!==runId) throw new Error('Engagement queue paused or changed.');
       return s;
     };
+    let activeHandle='';
+    const totals={completed:0,filtered:0,already:0,unavailable:0};
     try{
       if(!runId||initial.runState!=='running'||!reviewMode(initial)) return;
       const profiles=await db();
       for(const handle of parseHandles(initial.handles).map(profileKey)){
         let s=await live();
-        if(engagementComplete(s,handle)||['contacted','account_not_found','account_suspended'].includes(profiles[handle]?.processingStatus)) continue;
+        if(engagementComplete(s,handle)){totals.already++;await saveEngagementOutcome(handle,'complete','Configured engagement already confirmed.');continue}
+        if(['contacted','account_not_found','account_suspended'].includes(profiles[handle]?.processingStatus)){
+          totals.unavailable++;await saveEngagementOutcome(handle,'skipped','Saved profile status: '+profiles[handle].processingStatus);continue;
+        }
+        activeHandle=handle;
+        await saveEngagementOutcome(handle,'running','Loading profile and checking audience filters.');
         await chrome.storage.local.set({reviewHandle:handle});$('reviewHandle').value=handle;
         status(`Opening @${handle} for automatic engagement…`);
         await chrome.tabs.update(s.workflowTabId,{url:'https://x.com/'+encodeURIComponent(handle)});
@@ -35,7 +46,7 @@ async function runEngagementQueue(){
           if(r.ok){ready=true;break}
         }
         if(!ready){
-          if(isProcessed((await db())[handle])) continue;
+          if(['account_not_found','account_suspended'].includes((await db())[handle]?.processingStatus)){totals.unavailable++;await saveEngagementOutcome(handle,'skipped','X reports the account is unavailable.');continue;}
           throw new Error(`Profile @${handle} did not load. Refresh X and resume.`);
         }
         const collected=await tabMessage('COLLECT_PROFILE',{handle},PROFILE_LOAD_MS+5000);
@@ -44,7 +55,7 @@ async function runEngagementQueue(){
         current=collected.profile;$('profile').textContent=JSON.stringify(current,null,2);
         await chrome.storage.local.set({workflowCurrent:current,profileDisplay:$('profile').textContent});
         const audience=audienceReview(await live(),collected.profile);
-        if(!audience.eligible){await saveProfile(collected.profile,{processingStatus:'skipped',eligibilityReason:audience.reason});status(`Skipped @${handle}: ${audience.reason}`);continue}
+        if(!audience.eligible){totals.filtered++;await saveProfile(collected.profile,{processingStatus:'skipped',eligibilityReason:audience.reason});await saveEngagementOutcome(handle,'filtered',audience.reason);status(`Skipped @${handle}: ${audience.reason}`);await renderReview();continue}
         const action=async(action,extra={})=>{
           await live();
           const r=await tabMessage('ENGAGEMENT',{handle,runId,action,...extra},45000);
@@ -55,12 +66,14 @@ async function runEngagementQueue(){
         await action('follow');
         s=await live();
         if(s.outreachMode==='staged_review'){
-          let posts=[];
-          for(let attempt=0;attempt<10;attempt++){
-            posts=(await action('posts')).posts;
+          let posts=[],loadedArticles=0;
+          status(`Waiting for original posts by @${handle}…`);
+          for(let attempt=0;attempt<30;attempt++){
+            const scan=await action('posts');posts=scan.posts;loadedArticles=scan.loadedArticles??0;
             if(posts.length) break;
             await reviewSleep(1000);
           }
+          if(!posts.length&&!engagementComplete(await live(),handle)) throw new Error(`@${handle}: found no eligible original posts among ${loadedArticles} loaded articles after 30 seconds. Queue paused on this profile. Check whether X loaded its posts; reposts and quoted authors are excluded.`);
           for(const post of posts){
             s=await live();
             let events=verifiedEvents(s,handle),counts=engagementEligibility(s,events);
@@ -79,8 +92,10 @@ async function runEngagementQueue(){
             }
             if(engagementComplete(await live(),handle)) break;
           }
-          if(!engagementComplete(await live(),handle)) status(`@${handle}: not enough eligible loaded posts. Saved confirmed actions; continuing.`);
+          if(!engagementComplete(await live(),handle)) throw new Error(`@${handle}: configured engagement is incomplete after checking ${posts.length} eligible loaded posts. Queue paused on this profile; confirmed actions are saved. Load more original posts or adjust the required counts, then resume.`);
         }
+        totals.completed++;
+        await saveEngagementOutcome(handle,'complete',s.outreachMode==='follow_review'?'Follow confirmed. Follow-only mode does not like or comment.':'Configured follows, likes, and comments confirmed.');
         await renderReview();
         s=await live();
         const min=Math.max(1,Number(s.minDelay)||1),max=Math.max(min,Number(s.maxDelay)||min);
@@ -88,10 +103,10 @@ async function runEngagementQueue(){
         while(Date.now()<due){await live();await reviewSleep(Math.min(1000,due-Date.now()))}
       }
       await live();await chrome.storage.local.set({runState:'paused'});
-      status('Engagement pass complete. Confirmed actions are saved. Incomplete profiles can be retried with Start; staged DMs still require the waiting period and approval.');
+      status(`Engagement pass: ${totals.completed} completed, ${totals.filtered} filtered out, ${totals.already} already complete, ${totals.unavailable} unavailable or previously contacted. ${totals.filtered?'See each profile’s filter reason below. ':''}${initial.outreachMode==='follow_review'?'Follow-only mode: likes and comments are disabled.':'Staged DMs still require the waiting period and approval.'}`);
     }catch(e){
       const s=await reviewSettings();
-      if(s.engagementRunId===runId){if(s.runState==='running') await chrome.storage.local.set({runState:'paused'});status(e.message)}
+      if(s.engagementRunId===runId){if(s.runState==='running') await chrome.storage.local.set({runState:'paused'});if(activeHandle) await saveEngagementOutcome(activeHandle,'paused',e.message);status(e.message)}
     }
   };
   try{
@@ -105,7 +120,7 @@ async function startEngagementQueue(){
   if(!reviewMode(s)) throw new Error('Select an automatic engagement mode first.');
   const queue=parseHandles(s.handles);
   if(!queue.length||queue.some(h=>! /^[A-Za-z0-9_]{1,15}$/.test(h))) throw new Error('Add valid X handles to Profiles first.');
-  for(const key of ['requiredLikes','requiredComments']) if(!Number.isInteger(Number(s[key]))||Number(s[key])<0||Number(s[key])>100) throw new Error('Likes and comments must be whole numbers from 0 to 100.');
+  for(const key of ['requiredLikes','requiredComments']) if(String(s[key]).trim()===''||!Number.isInteger(Number(s[key]))||Number(s[key])<0||Number(s[key])>100) throw new Error('Likes and comments must be whole numbers from 0 to 100.');
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
   if(!tab?.id||!/^https:\/\/x\.com(?:\/|$)/.test(tab.url||'')) throw new Error('Open an X tab first.');
   if(engagementLoopBusy) return;
@@ -118,16 +133,20 @@ async function startEngagementQueue(){
 }
 async function renderReview(){
   const s=await reviewSettings(),engagement=reviewMode(s);
-  $('start').textContent=engagement?'Start automatic engagement':'Start';
+  const startLabel=s.outreachMode==='follow_review'?'Start automatic follows':'Start automatic engagement';
+  $('start').textContent=engagement?startLabel:'Start';
+  $('reviewNext').textContent=startLabel;
   $('next').textContent=engagement?'Resume engagement':'Open next';
-  $('workflowHelp').textContent=engagement
-    ? 'Start runs the profile queue automatically: checks the audience, follows, and (in staged mode) likes posts and publishes generated replies. Only confirmed actions count. Keep this side panel open. Pause stops subsequent actions. Staged DMs still require approval.'
+  $('workflowHelp').textContent=s.outreachMode==='follow_review'
+    ? 'Follow-only mode: Start follows eligible profiles. Likes and comments are disabled in this mode. Choose Automatic engagement · staged DMs to enable them. Audience filters can skip profiles; reasons appear below.'
+    : engagement ? 'Start runs the profile queue automatically: checks the audience, follows, and (in staged mode) likes posts and publishes generated replies. Only confirmed actions count. Keep this side panel open. Pause stops subsequent actions. Staged DMs still require approval.'
     : 'Start checks profiles, follows eligible accounts when needed, drafts and prepares DMs. Keep the side panel open. With automatic sending off, each prepared DM waits for Send & Next.';
   const selected=profileKey(s.reviewHandle);
   const summary=h=>{
     const r=engagementEligibility(s,verifiedEvents(s,h));
     const legacy=(s[ENGAGEMENT_PREFIX+h]||[]).filter(e=>!e.confirmed).length;
-    return `@${h}: ${r.likes} confirmed likes, ${r.comments} confirmed comments, ${r.followed?'following confirmed':'follow pending'}. ${r.eligible?'Eligible for DM review.':r.eligibleAt&&Date.now()<r.eligibleAt?'Waiting until '+new Date(r.eligibleAt).toLocaleString()+'.':'Requirements incomplete.'}${legacy?' '+legacy+' old manual records excluded.':''}`;
+    const outcome=s[ENGAGEMENT_OUTCOME_PREFIX+h];
+    return `@${h}: ${outcome?outcome.state.toUpperCase()+': '+outcome.reason+' ':''}${r.likes} confirmed likes, ${r.comments} confirmed comments, ${r.followed?'following confirmed':'follow pending'}. ${r.eligible?'Eligible for DM review.':r.eligibleAt&&Date.now()<r.eligibleAt?'Waiting until '+new Date(r.eligibleAt).toLocaleString()+'.':'Requirements incomplete.'}${legacy?' '+legacy+' old manual records excluded.':''}`;
   };
   $('engagementStatus').textContent=selected?summary(selected):'Start to automatically engage with profiles in your list.';
   const container=$('reviewQueue');container.replaceChildren();
@@ -146,7 +165,7 @@ for(const id of ['start','next']){
   $(id).onclick=reviewAction(async()=>{await store();if(reviewMode(await reviewSettings()))await startEngagementQueue();else await original()});
 }
 chrome.storage.onChanged?.addListener((changes,area)=>{
-  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||['outreachMode','reviewHandle','handles','requiredLikes','requiredComments','engagementDays','runState'].includes(k))) void renderReview();
+  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||k.startsWith(ENGAGEMENT_OUTCOME_PREFIX)||['outreachMode','reviewHandle','handles','requiredLikes','requiredComments','engagementDays','runState'].includes(k))) void renderReview();
   if(area==='local'&&changes.engagementRunId) void runEngagementQueue();
 });
 uiReady.then(async()=>{await renderReview();void runEngagementQueue()}).catch(e=>status(e.message));

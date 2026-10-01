@@ -12,11 +12,19 @@ async function engagementGuard(job){
 function engagementPosts(handle){
   const posts=new Map();
   for(const article of document.querySelectorAll('article[data-testid="tweet"]')){
-    const link=article.querySelector('[data-testid="User-Name"] a[href*="/status/"]');
+    // Use the outer post's timestamp first. It need not live inside User-Name.
+    // Never select a quoted post just because its author matches the target.
+    const timestamp=[...article.querySelectorAll('time')].find(time=>{
+      const anchor=time.closest('a[href*="/status/"]');
+      return time.closest('article')===article && anchor && !anchor.parentElement?.closest('[data-testid="quoteTweet"],[role="link"]');
+    });
+    const link=timestamp?.closest('a[href*="/status/"]')||article.querySelector('[data-testid="User-Name"] a[href*="/status/"]');
     let url;try{url=new URL(link?.href,location.href)}catch{continue}
-    if(!new RegExp('^/'+profileKey(handle)+'/status/\\d+/?$','i').test(url.pathname)) continue;
-    // Exclude reposts and quoted-post controls; act only on the outer article.
-    if(article.querySelector('[data-testid="socialContext"]')) continue;
+    const match=url.pathname.match(/^\/([A-Za-z0-9_]+)\/status\/(\d+)\/?$/);
+    if(!['x.com','www.x.com','twitter.com','www.twitter.com'].includes(url.hostname)||!match||profileKey(match[1])!==profileKey(handle)) continue;
+    // Pinned posts also have socialContext; they are eligible original posts.
+    const context=article.querySelector('[data-testid="socialContext"]')?.innerText||'';
+    if(/\b(reposted|retweeted)\b/i.test(context)) continue;
     const post='https://x.com'+url.pathname.replace(/\/$/,'');
     posts.set(post,{post,text:article.querySelector('[data-testid="tweetText"]')?.innerText||'',article});
   }
@@ -32,7 +40,7 @@ async function executeEngagement(job){
   engagementBusy=true;
   try{
     await engagementGuard(job);
-    if(job.action==='posts') return {ok:true,posts:engagementPosts(job.handle).map(({post,text})=>({post,text}))};
+    if(job.action==='posts') return {ok:true,posts:engagementPosts(job.handle).map(({post,text})=>({post,text})),loadedArticles:document.querySelectorAll('article[data-testid="tweet"]').length};
     if(job.action==='follow'){
       const result=await ensureFollowingOnPage(job.handle,job);
       if(!result.ok) return result;

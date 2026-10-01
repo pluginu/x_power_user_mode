@@ -1539,3 +1539,70 @@ test('comment without a receipt preserves its marker and does not count',async()
   await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
   assert.equal(h.run('clicks'),1);
 });
+
+function postScannerFixture(){
+  const h=harness('content.js');loadEngagement(h);
+  h.run(`function postArticle(author,id,{pinned=false,reposted=false,quotedAuthor=null}={}){
+    const article={};
+    const link={href:'https://x.com/'+author+'/status/'+id,parentElement:{closest:()=>null}};
+    const time={closest:s=>s==='article'?article:link};
+    const quotedLink={href:'https://x.com/'+quotedAuthor+'/status/999',parentElement:{closest:()=>({})}};
+    const quotedTime={closest:s=>s==='article'?article:quotedLink};
+    article.querySelectorAll=s=>s==='time'?[time,...(quotedAuthor?[quotedTime]:[])]:[];
+    // The timestamp link is outside User-Name, as in an alternate X layout.
+    article.querySelector=s=>s==='[data-testid="socialContext"]'?(pinned?{innerText:'Pinned'}:reposted?{innerText:'Alice reposted'}:null):
+      s==='[data-testid="tweetText"]'?{innerText:'Original text'}:null;
+    return article;
+  }`);
+  return h;
+}
+test('post scanner finds timestamp links outside User-Name and includes pinned originals',()=>{
+  const h=postScannerFixture();
+  h.run(`document.querySelectorAll=()=>[postArticle('Alice',123,{pinned:true}),postArticle('alice',124)];`);
+  assert.equal(h.run("JSON.stringify(engagementPosts('alice').map(p=>p.post))"),JSON.stringify(['https://x.com/Alice/status/123','https://x.com/alice/status/124']));
+});
+test('post scanner excludes reposts and never mistakes a quoted target for the outer author',()=>{
+  const h=postScannerFixture();
+  h.run(`document.querySelectorAll=()=>[postArticle('alice',123,{reposted:true}),postArticle('bob',124,{quotedAuthor:'alice'})];`);
+  assert.equal(h.run("engagementPosts('alice').length"),0);
+});
+async function queueFailureFixture(settings,profile,posts){
+  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice\nbob',requiredLikes:1,requiredComments:0,...settings});
+  await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
+  h.run(`let visits=[],actions=[],now=Date.now();Date=class extends Date {static now(){return now}};
+    setTimeout=fn=>{now+=2000;fn();return 0};
+    chrome.tabs.query=async()=>[{id:1,url:'https://x.com/home'}];
+    chrome.tabs.update=async(id,o)=>visits.push(o.url);
+    tabMessage=async(type,msg)=>{
+      if(type==='PROFILE_READY') return {ok:true};
+      if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:msg.handle,...${JSON.stringify(profile)}}};
+      actions.push(msg.action+':'+msg.handle);
+      if(msg.action==='posts')return {ok:true,posts:${JSON.stringify(posts)},loadedArticles:3};
+      return {ok:true};
+    };`);
+  await h.element('start').onclick();
+  for(let i=0;i<10;i++) await new Promise(setImmediate);
+  return h;
+}
+test('empty post scans pause on the current profile instead of silently advancing',async()=>{
+  const h=await queueFailureFixture({}, {}, []);
+  assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice']));
+  assert.equal(h.state.runState,'paused');
+  assert.match(h.state['engagementOutcome:alice'].reason,/no eligible original posts among 3 loaded articles/);
+  assert.match(h.element('engagementStatus').textContent,/PAUSED/);
+});
+test('audience rejection persists the precise skip reason and summarizes filtered profiles',async()=>{
+  const h=await queueFailureFixture({usaOnly:'on'}, {location:'Earth'}, []);
+  assert.equal(h.run('actions.length'),0);
+  assert.equal(h.state['engagementOutcome:alice'].state,'filtered');
+  assert.match(h.state['engagementOutcome:alice'].reason,/USA-only/);
+  assert.match(h.state['engagementOutcome:bob'].reason,/USA-only/);
+  assert.match(h.element('status').textContent,/0 completed, 2 filtered out/);
+});
+test('follow-only mode explicitly labels its start buttons and explains that likes are disabled',async()=>{
+  const h=harness('popup.js',{outreachMode:'follow_review'});
+  await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
+  assert.equal(h.element('start').textContent,'Start automatic follows');
+  assert.equal(h.element('reviewNext').textContent,'Start automatic follows');
+  assert.match(h.element('workflowHelp').textContent,/Likes and comments are disabled/);
+});

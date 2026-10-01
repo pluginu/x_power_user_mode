@@ -1,4 +1,4 @@
-# X Power User Plugin v1.9.23
+# X Power User Plugin v1.9.24
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -15,7 +15,15 @@ The plugin folder is `x_power_user_plugin`, matching the display name **X Power 
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.23** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.24** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.24: explain skipped engagement and find pinned posts
+
+Post discovery now accepts original pinned posts and timestamp links outside the author block while excluding reposts and quoted authors. If required engagement cannot be completed from the loaded posts, the queue pauses on that profile with a specific reason instead of advancing silently. Confirmed actions remain saved.
+
+Each profile shows its latest outcome and filter rejection reason. The end-of-pass summary distinguishes completed, filtered, already-complete, and unavailable/contacted profiles. Follow-only mode labels its buttons **Start automatic follows** and explicitly explains that likes and comments are disabled. Select **Automatic engagement · staged DMs** for likes and comments. The existing location and follower filters still apply; USA-only rejects missing and ambiguous locations. Set **Any location** only if that matches your intended audience.
+
+Regression checks cover alternate timestamp placement, pinned posts, quoted authors, empty post scans, and persistent filter reasons. Live signed-in X compatibility remains unverified.
 
 ## v1.9.23: automatic engagement
 

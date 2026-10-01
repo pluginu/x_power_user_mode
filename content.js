@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.23';
+const CONTENT_BUILD = '1.9.24';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
