@@ -170,11 +170,11 @@ for(const id of ['start','next']){
   $(id).onclick=reviewAction(async()=>{await store();if(reviewMode(await reviewSettings()))await startEngagementQueue();else await original()});
 }
 chrome.storage.onChanged?.addListener((changes,area)=>{
-  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||k.startsWith(ENGAGEMENT_OUTCOME_PREFIX)||['outreachMode','reviewHandle','handles','requiredLikes','requiredComments','engagementDays','runState'].includes(k))) void renderReview();
-  if(area==='local'&&changes.engagementRunId) void runEngagementQueue();
+  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||k.startsWith(ENGAGEMENT_OUTCOME_PREFIX)||['outreachMode','reviewHandle','handles','requiredLikes','requiredComments','engagementDays','runState'].includes(k))) void renderReview().catch(()=>{});
+  if(area==='local'&&changes.engagementRunId) void runEngagementQueue().catch(()=>{});
 });
 uiReady.then(async()=>{await renderReview();void runEngagementQueue()}).catch(e=>status(e.message));
 setInterval(()=>void renderReview().catch(()=>{}),60000);
 
 // Recover a handoff when another panel was releasing its navigation lock.
-setInterval(async()=>{const s=await reviewSettings();if(s.runState==='running'&&reviewMode(s)&&s.engagementRunId) void runEngagementQueue()},1000);
+setInterval(()=>void (async()=>{const s=await reviewSettings();if(s.runState==='running'&&reviewMode(s)&&s.engagementRunId) await runEngagementQueue()})().catch(()=>{}),1000);

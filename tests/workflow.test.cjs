@@ -7,18 +7,20 @@ const vm=require('node:vm');
 function harness(file,state={}){
   state.usaOnly??='off';state.followerReview??='off';
   const elements={};
+  const windowListeners={};
   let listener;
   const element=id=>elements[id] ||= {value:'',textContent:'',listeners:{},addEventListener(name,fn){this.listeners[name]=fn},classList:{contains:()=>true}};
   const ctx=vm.createContext({console,URL,Date,Set,JSON,Math,Number,String,Promise,
     document:{getElementById:element,body:{classList:{contains:()=>true}},querySelectorAll:()=>[],querySelector:()=>null},
     location:{href:'https://x.com/i/chat/123',pathname:'/i/chat/123'},
-    window:{addEventListener(){}},alert(){},setTimeout(){},clearTimeout(){},setInterval(){},
+    window:{addEventListener(name,fn){(windowListeners[name]||=[]).push(fn)}},alert(){},setTimeout(){},clearTimeout(){},setInterval(){},clearInterval(){},
     chrome:{storage:{local:{async get(keys){return {...state}},async set(p){Object.assign(state,p)},async remove(keys){(Array.isArray(keys)?keys:[keys]).forEach(k=>delete state[k])}}},
       runtime:{onMessage:{addListener(fn){listener=fn}},sendMessage:async()=>({tabId:1})},
       tabs:{get:async()=>({id:1,status:'complete',url:'https://x.com/alice'}),query:async()=>[{id:1}],update:async()=>{} }}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','progress.js'),'utf8'),ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),ctx);
-  return {ctx,state,element,run:code=>vm.runInContext(code,ctx),message:msg=>new Promise(resolve=>listener(msg,{},resolve))};
+  return {ctx,state,element,run:code=>vm.runInContext(code,ctx),message:msg=>new Promise(resolve=>listener(msg,{},resolve)),
+    dispatchWindow(name,event){for(const fn of windowListeners[name]||[]) fn(event)}};
 }
 
 test('delayed composer must become stable and gain focus',async()=>{
@@ -1783,4 +1785,13 @@ test('disconnect during resume contains failures from both work and error report
   await assert.doesNotReject(h.run('resumePendingDmSafely()'));
   assert.equal(h.state.pendingDmPrepare.stage,'open_profile');
   assert.equal(h.run('preparing'),false);
+});
+
+test('in-flight Chrome API rejection after reload is consumed and stops content work',()=>{
+  const h=harness('content.js');
+  let prevented=false;
+  h.run('let stoppedTimers=0;clearTimeout=()=>stoppedTimers++;clearInterval=()=>stoppedTimers++');
+  h.dispatchWindow('unhandledrejection',{reason:new Error('Extension context invalidated.'),preventDefault(){prevented=true}});
+  assert.equal(prevented,true);
+  assert.equal(h.run('stoppedTimers'),2);
 });

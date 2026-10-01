@@ -1,4 +1,12 @@
-const CONTENT_BUILD = '1.9.29';
+const CONTENT_BUILD = '1.9.30';
+let prepareStartupTimer=null,prepareResumeTimer=null;
+function extensionContextInvalidated(error){
+  return /extension context invalidated/i.test(String(error?.message||error||''));
+}
+function stopContentWork(){
+  clearTimeout(prepareStartupTimer);
+  clearInterval(prepareResumeTimer);
+}
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -698,17 +706,24 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
 async function resumePendingDmSafely(){
   // Reloading the extension disconnects scripts in existing tabs.
   if(!chrome.runtime?.id){
-    clearTimeout(prepareStartupTimer);
-    clearInterval(prepareResumeTimer);
+    stopContentWork();
     return;
   }
   try{await autoPreparePendingDm()}
-  catch(e){await appendPersistentLog('DM RESUME FAILED',{error:e?.message||String(e)})}
+  catch(e){
+    if(extensionContextInvalidated(e)){stopContentWork();return}
+    await appendPersistentLog('DM RESUME FAILED',{error:e?.message||String(e)})
+  }
 }
-const prepareStartupTimer=setTimeout(resumePendingDmSafely,900);
+prepareStartupTimer=setTimeout(resumePendingDmSafely,900);
 // Resume even when an SPA route finishes changing well after content-script startup.
-const prepareResumeTimer=setInterval(resumePendingDmSafely,2000);
+prepareResumeTimer=setInterval(resumePendingDmSafely,2000);
 
 void appendPersistentLog('CONTENT SCRIPT READY',{build:CONTENT_BUILD,url:location.href,readyState:document.readyState}).catch(()=>{});
 window.addEventListener('error',e=>{void appendPersistentLog('CONTENT ERROR',{message:e.message,file:e.filename,line:e.lineno}).catch(()=>{})});
-window.addEventListener('unhandledrejection',e=>{void appendPersistentLog('CONTENT REJECTION',{error:e.reason?.stack||String(e.reason)}).catch(()=>{})});
+window.addEventListener('unhandledrejection',e=>{
+  // Chrome rejects APIs already awaited by the old script when an extension
+  // reload replaces it. Stop that dead instance and consume this lifecycle error.
+  if(extensionContextInvalidated(e.reason)){stopContentWork();e.preventDefault();return}
+  void appendPersistentLog('CONTENT REJECTION',{error:e.reason?.stack||String(e.reason)}).catch(()=>{});
+});
