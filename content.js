@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.28';
+const CONTENT_BUILD = '1.9.29';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -379,7 +379,8 @@ function chatDebug(){return {url:location.href,readyState:document.readyState,di
 
 let contentLogQueue=Promise.resolve();
 function appendPersistentLog(label,data){
-  contentLogQueue=contentLogQueue.catch(()=>{}).then(()=>writePersistentLog(label,data));
+  // Diagnostics must never reject into the workflow or the rejection logger.
+  contentLogQueue=contentLogQueue.then(()=>writePersistentLog(label,data)).catch(()=>{});
   return contentLogQueue;
 }
 async function writePersistentLog(label,data){
@@ -535,7 +536,7 @@ async function autoPreparePendingDm(){
     if(e.code==='ACCOUNT_UNUSABLE'){await markUnusableAccount(job,e.message,e.processingStatus);return}
     if(e.code==='CLOSED_INBOX'){await markDmUnavailable(job,e.notice);return}
     const debug=e?.debug||chatDebug();
-    await updatePendingDm({stage:'failed',error:e.message},job);
+    if(job) await updatePendingDm({stage:'failed',error:e.message},job);
     await appendPersistentLog('PROFILE DM PREPARE FAILED',{error:e.message,debug});
   }finally{preparing=false}
 }
@@ -694,9 +695,19 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
 });
 
 // Continue pending prepare jobs after full navigation / popup closure.
-setTimeout(autoPreparePendingDm,900);
+async function resumePendingDmSafely(){
+  // Reloading the extension disconnects scripts in existing tabs.
+  if(!chrome.runtime?.id){
+    clearTimeout(prepareStartupTimer);
+    clearInterval(prepareResumeTimer);
+    return;
+  }
+  try{await autoPreparePendingDm()}
+  catch(e){await appendPersistentLog('DM RESUME FAILED',{error:e?.message||String(e)})}
+}
+const prepareStartupTimer=setTimeout(resumePendingDmSafely,900);
 // Resume even when an SPA route finishes changing well after content-script startup.
-setInterval(autoPreparePendingDm,2000);
+const prepareResumeTimer=setInterval(resumePendingDmSafely,2000);
 
 void appendPersistentLog('CONTENT SCRIPT READY',{build:CONTENT_BUILD,url:location.href,readyState:document.readyState}).catch(()=>{});
 window.addEventListener('error',e=>{void appendPersistentLog('CONTENT ERROR',{message:e.message,file:e.filename,line:e.lineno}).catch(()=>{})});

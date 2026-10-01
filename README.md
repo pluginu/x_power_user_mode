@@ -1,4 +1,4 @@
-# X Power User Plugin v1.9.28
+# X Power User Plugin v1.9.29
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -15,7 +15,13 @@ The plugin folder is `x_power_user_plugin`, matching the display name **X Power 
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.28** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.29** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.29: contain startup storage failures
+
+Background DM resume timers now stop when the content script is disconnected after an extension reload. Resume failures are caught even if storage also fails while reporting the error, and diagnostic log failures no longer reject into the workflow. A failed initial storage read does not create a preparation record. Reload the extension and refresh existing X tabs to replace old scripts.
+
+Validated with 161 mocked browser tests; live Chrome/X behavior still needs verification.
 
 ## v1.9.28: accept reply composers without a post permalink
 

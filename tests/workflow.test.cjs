@@ -1736,3 +1736,51 @@ test('a detached Reply button cannot bind a new composer',async()=>{
   assert.match(result.error,/Target post changed/);
   assert.equal(h.run('opened'),false);
 });
+
+test('diagnostic storage failures do not reject and logging recovers',async()=>{
+  const h=harness('content.js');
+  await h.run('contentLogQueue');
+  h.run(`const originalSet=chrome.storage.local.set;
+    chrome.storage.local.set=async()=>{throw new Error('Storage unavailable')}`);
+  await assert.doesNotReject(h.run("appendPersistentLog('FAILED WRITE')"));
+  h.run('chrome.storage.local.set=originalSet');
+  await h.run("appendPersistentLog('RECOVERED WRITE')");
+  assert.match(h.state.contentDebugLog,/RECOVERED WRITE/);
+});
+
+test('startup storage rejection is contained without creating a preparation job',async()=>{
+  const h=harness('content.js');
+  await h.run('contentLogQueue');
+  h.run(`chrome.runtime.id='test-extension';
+    chrome.storage.local.get=async()=>{throw new Error('Storage unavailable')}`);
+  await assert.doesNotReject(h.run('resumePendingDmSafely()'));
+  assert.equal(h.state.pendingDmPrepare,undefined);
+  assert.equal(h.run('preparing'),false);
+});
+
+test('disconnected content script stops resume timers without touching storage',async()=>{
+  const h=harness('content.js');
+  await h.run('contentLogQueue');
+  h.run(`let storageReads=0,clearedTimers=0;
+    chrome.runtime.id=undefined;
+    chrome.storage.local.get=()=>{storageReads++;throw new Error('Extension context invalidated.')};
+    clearTimeout=()=>clearedTimers++;clearInterval=()=>clearedTimers++`);
+  await assert.doesNotReject(h.run('resumePendingDmSafely()'));
+  assert.equal(h.run('storageReads'),0);
+  assert.equal(h.run('clearedTimers'),2);
+});
+
+test('disconnect during resume contains failures from both work and error reporting',async()=>{
+  const h=harness('content.js');
+  await h.run('contentLogQueue');
+  Object.assign(h.state,{pendingDmPrepare:{handle:'alice',draft:'hello',stage:'open_profile'}});
+  h.run(`chrome.runtime.id='test-extension';
+    assertReviewDmAllowed=async()=>{
+      chrome.runtime.id=undefined;
+      chrome.storage.local.get=async()=>{throw new Error('Extension context invalidated.')};
+      throw new Error('Extension context invalidated.');
+    }`);
+  await assert.doesNotReject(h.run('resumePendingDmSafely()'));
+  assert.equal(h.state.pendingDmPrepare.stage,'open_profile');
+  assert.equal(h.run('preparing'),false);
+});
