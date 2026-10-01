@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.35';
+const CONTENT_BUILD = '1.9.36';
 let prepareStartupTimer=null,prepareResumeTimer=null;
 function extensionContextInvalidated(error){
   return /extension context invalidated/i.test(String(error?.message||error||''));

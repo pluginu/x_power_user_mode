@@ -1576,12 +1576,15 @@ async function queueFailureFixture(settings,profile,posts){
   for(let i=0;i<10;i++) await new Promise(setImmediate);
   return h;
 }
-test('empty post scans pause on the current profile instead of silently advancing',async()=>{
+test('empty post scans save a skip reason and advance to the next profile',async()=>{
   const h=await queueFailureFixture({}, {}, []);
-  assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice']));
+  assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice','https://x.com/bob']));
   assert.equal(h.state.runState,'paused');
-  assert.match(h.state['engagementOutcome:alice'].reason,/no eligible original posts among 3 loaded articles/);
-  assert.match(h.element('engagementStatus').textContent,/PAUSED/);
+  assert.equal(h.state['engagementOutcome:alice'].state,'skipped');
+  assert.equal(h.state['engagementOutcome:bob'].state,'skipped');
+  assert.match(h.state['engagementOutcome:alice'].reason,/No eligible original posts found among 3 loaded articles/);
+  assert.match(h.element('engagementStatus').textContent,/SKIPPED/);
+  assert.match(h.element('status').textContent,/2 skipped with no eligible posts/);
 });
 test('audience rejection persists the precise skip reason and summarizes filtered profiles',async()=>{
   const h=await queueFailureFixture({usaOnly:'on'}, {location:'Earth'}, []);

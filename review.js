@@ -26,7 +26,7 @@ async function runEngagementQueue(){
       return s;
     };
     let activeHandle='';
-    const totals={completed:0,filtered:0,already:0,unavailable:0};
+    const totals={completed:0,filtered:0,already:0,unavailable:0,noPosts:0};
     try{
       if(!runId||initial.runState!=='running'||!reviewMode(initial)) return;
       const profiles=await db();
@@ -75,7 +75,14 @@ async function runEngagementQueue(){
             if(posts.length) break;
             await reviewSleep(1000);
           }
-          if(!posts.length&&!postEngagementComplete(await live(),handle)) throw new Error(`@${handle}: found no eligible original posts among ${loadedArticles} loaded articles after 30 seconds. Queue paused on this profile. Check whether X loaded its posts; reposts and quoted authors are excluded.`);
+          if(!posts.length&&!postEngagementComplete(await live(),handle)){
+            totals.noPosts++;
+            const reason=`No eligible original posts found among ${loadedArticles} loaded articles. Nothing is available to like or comment on right now.`;
+            await saveEngagementOutcome(handle,'skipped',reason);
+            status(`Skipped @${handle}: ${reason}`);
+            await renderReview();
+            continue;
+          }
           for(const post of posts){
             s=await live();
             let events=verifiedEvents(s,handle),counts=engagementEligibility(s,events);
@@ -107,7 +114,7 @@ async function runEngagementQueue(){
         while(Date.now()<due){await live();await reviewSleep(Math.min(1000,due-Date.now()))}
       }
       await live();await chrome.storage.local.set({runState:'paused'});
-      status(`Engagement pass: ${totals.completed} completed, ${totals.filtered} filtered out, ${totals.already} already complete, ${totals.unavailable} unavailable or previously contacted. ${totals.filtered?'See each profile’s filter reason below. ':''}${initial.outreachMode==='follow_review'?'Follow-only mode: likes and comments are disabled.':initial.outreachMode==='engage_follow'?'Likes and comments completed before following. No DMs.':'Staged DMs still require the waiting period and approval.'}`);
+      status(`Engagement pass: ${totals.completed} completed, ${totals.filtered} filtered out, ${totals.noPosts} skipped with no eligible posts, ${totals.already} already complete, ${totals.unavailable} unavailable or previously contacted. ${totals.filtered||totals.noPosts?'See each profile’s reason below. ':''}${initial.outreachMode==='follow_review'?'Follow-only mode: likes and comments are disabled.':initial.outreachMode==='engage_follow'?'Likes and comments completed before following. No DMs.':'Staged DMs still require the waiting period and approval.'}`);
     }catch(e){
       const s=await reviewSettings();
       if(s.engagementRunId===runId){if(s.runState==='running') await chrome.storage.local.set({runState:'paused'});if(activeHandle) await saveEngagementOutcome(activeHandle,'paused',e.message);status(e.message)}
