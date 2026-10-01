@@ -1,4 +1,4 @@
-# X Power User Mode — SIN Outreach Assistant v1.9.19
+# X Power User Mode — SIN Outreach Assistant v1.9.20
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -13,7 +13,13 @@ A Chrome extension for reviewing an X profile queue, following eligible profiles
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.19** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.20** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.20: profile loading and follow detection
+
+The queue now checks profile readiness even while Chrome reports the tab is loading, so background page resources cannot hold up an otherwise ready profile. Follow detection excludes recommendation cards and posts, and reads button text and accessibility labels separately. Unknown follow states are checked again before drafting or DM preparation; late controls get a bounded wait. A Follow click is reported as successful only after X shows Following.
+
+Reload the extension and refresh the X tab to activate these changes. Keep the side panel open while the queue runs. If it still pauses, use **Export debug log** to capture the workflow stage and page diagnostics.
 
 ## USA-only profile and follower review
 

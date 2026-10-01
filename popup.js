@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 let current = null;
 let timer = null;
-const BUILD = '1.9.19';
+const BUILD = '1.9.20';
 const PROFILE_LOAD_MS = 120000;
 const PREPARE_MS = 360000;
 let lastWorkflowLog = '';
@@ -272,7 +272,9 @@ async function workflowTick(){
         await navigateToProfile(t,st.workflowHandle,attempts+1);
         return;
       }
-      if(t.status!=='complete'||!onTarget){
+      // The profile can be usable while ads/media keep the tab loading.
+      // Let the content script verify the actual profile DOM on the target route.
+      if(!onTarget){
         if(Date.now()>st.workflowDue) throw new Error(`The target profile did not finish loading within 120 seconds (tab ${t?.id}, status ${t?.status}, URL ${t?.url}).`);
         return;
       }
@@ -491,7 +493,8 @@ $('draft').onclick=async()=>{
     }
     if(['account_suspended','account_not_found'].includes((await db())[profileKey(current.handle)]?.processingStatus)){status('Account unavailable; profile remains skipped.');return}
     await assertReviewDmAllowed(current.handle);
-    if(current.followingStatus==='no' && !reviewMode(await chrome.storage.local.get('outreachMode'))){
+    // Unknown means we still need to check the live control before drafting.
+    if(current.followingStatus!=='yes' && !reviewMode(await chrome.storage.local.get('outreachMode'))){
       const f=await ensureFollowed();
       if(!f?.ok){alertError('Could not follow this account.',(f?.error||'Unknown follow error')+'\n'+JSON.stringify(f?.debug||{},null,2));return}
     }
@@ -563,7 +566,7 @@ $('openDm').onclick=async event=>{try{
   const targetHandle=current.handle;
   if(['account_suspended','account_not_found'].includes((await db())[profileKey(targetHandle)]?.processingStatus)){status('Account unavailable; profile remains skipped.');return}
   await assertReviewDmAllowed(current.handle);
-  if(current.followingStatus==='no' && !reviewMode(await chrome.storage.local.get('outreachMode'))){
+  if(current.followingStatus!=='yes' && !reviewMode(await chrome.storage.local.get('outreachMode'))){
     const f=await ensureFollowed();
     if(!f?.ok){alertError('Could not follow this account before preparing DM.',f?.error||'Unknown error');return}
   }

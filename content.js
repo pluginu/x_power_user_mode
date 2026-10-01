@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.19';
+const CONTENT_BUILD = '1.9.20';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -6,23 +6,29 @@ function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 function normHandle(s){return String(s||'').trim().replace(/^@/,'').toLowerCase()}
 function visible(el){if(!el)return false;const r=el.getBoundingClientRect();const st=getComputedStyle(el);return r.width>0&&r.height>0&&st.visibility!=='hidden'&&st.display!=='none'}
 
+// Only the profile controls count, not timeline authors or recommendation cards.
+function profileControlRoot(){return document.querySelector('[data-testid="primaryColumn"]')||document.querySelector('main')||document}
+function isProfileControl(el){return !el.closest?.('article,[data-testid="UserCell"],aside,[role="dialog"]')}
+function followControlState(el){
+  const id=el.getAttribute?.('data-testid')||'';
+  // X can repeat the same label in visible text and aria-label; match each separately.
+  const labels=[el.innerText,el.getAttribute?.('aria-label'),el.getAttribute?.('title')].map(x=>String(x||'').trim());
+  if(/(^|[-_])unfollow$/i.test(id)||labels.some(x=>/^(following|unfollow)(?:\s+@\w+)?$/i.test(x))) return 'yes';
+  if(/(^|[-_])follow$/i.test(id)||labels.some(x=>/^follow(?:\s+@\w+)?$/i.test(x))) return 'no';
+  return 'unknown';
+}
+function profileFollowControls(){
+  return [...profileControlRoot().querySelectorAll('button,[role="button"],a')].filter(el=>visible(el)&&isProfileControl(el));
+}
 function relationship(){
-  const root=document.querySelector('main')||document;
-  const els=[...root.querySelectorAll('button,[role="button"],a')].filter(visible);
-  const candidates=els.map(el=>({el,text:allText(el),testid:el.getAttribute?.('data-testid')||''})).filter(x=>/(^|[-_])(unfollow|follow)$|^(following|follow|unfollow)$/i.test(x.testid)||/^(following|follow|unfollow)$/i.test(x.text));
-  const positive=candidates.find(x=>/unfollow$/i.test(x.testid)||/^(following|unfollow)$/i.test(x.text));
-  const negative=candidates.find(x=>/(^|[-_])follow$/i.test(x.testid)||/^follow$/i.test(x.text));
-  const status=positive?'yes':negative?'no':'unknown';
-  const followsYou=[...root.querySelectorAll('span,div')].some(el=>/^follows you$/i.test((el.innerText||'').trim()));
-  return {isFollowing:status==='yes'?true:status==='no'?false:null,followingStatus:status,followsYou,relationshipDebug:candidates.slice(0,12).map(x=>({text:x.text,testid:x.testid}))};
+  const candidates=profileFollowControls().map(el=>({text:allText(el),testid:el.getAttribute?.('data-testid')||'',status:followControlState(el)})).filter(x=>x.status!=='unknown');
+  const status=candidates.find(x=>x.status==='yes')?'yes':candidates.length?'no':'unknown';
+  const followsYou=[...profileControlRoot().querySelectorAll('span,div')].some(el=>isProfileControl(el)&&/^follows you$/i.test((el.innerText||'').trim()));
+  return {isFollowing:status==='yes'?true:status==='no'?false:null,followingStatus:status,followsYou,relationshipDebug:candidates.slice(0,12)};
 }
 
 function findFollowButton(){
-  const root=document.querySelector('main')||document;
-  return [...root.querySelectorAll('button,[role="button"]')].filter(visible).find(el=>{
-    const t=allText(el), id=el.getAttribute('data-testid')||'';
-    return /^follow$/i.test(t)||/(^|[-_])follow$/i.test(id);
-  })||null;
+  return profileFollowControls().find(el=>followControlState(el)==='no')||null;
 }
 
 function findDmButton(){
@@ -393,8 +399,25 @@ async function ensureFollowingOnPage(handle){
   const review=audienceReview(settings,profile);
   if(!review.eligible) throw new Error(review.reason);
   let rel=relationship();
+  // The header can settle before its action controls mount. Wait without clicking twice.
+  if(rel.followingStatus==='unknown'){
+    rel=await waitForElement(()=>{
+      if(normHandle(location.pathname.split('/')[1])!==normHandle(handle)) throw new Error('Profile changed while waiting for Follow.');
+      const live=relationship();
+      return live.followingStatus!=='unknown'?live:null;
+    },5000);
+    if(!rel) return {ok:false,error:'The profile Follow control did not appear. Check the X profile and retry.',debug:domDebug()};
+    // Recheck current settings and profile after waiting for late controls.
+    const liveSettings=await chrome.storage.local.get(null);
+    if(reviewMode(liveSettings)) throw new Error('Follow manually on X in review mode.');
+    const liveProfile=collectProfile();
+    if(normHandle(liveProfile.handle)!==normHandle(handle)) throw new Error('Profile changed while waiting for Follow.');
+    const liveReview=audienceReview(liveSettings,liveProfile);
+    if(!liveReview.eligible) throw new Error(liveReview.reason);
+    rel=relationship();
+    if(rel.followingStatus==='unknown') return {ok:false,error:'The profile Follow control disappeared. Check the X profile and retry.',debug:domDebug()};
+  }
   if(rel.followingStatus==='yes') return {ok:true,alreadyFollowing:true,followedNow:false,relationship:rel,debug:domDebug()};
-  if(rel.followingStatus==='unknown') return {ok:true,alreadyFollowing:false,followedNow:false,uncertain:true,relationship:rel,debug:domDebug()};
   const btn=findFollowButton();
   if(!btn) return {ok:false,error:'X reports not-following, but the Follow button could not be located.',relationship:rel,debug:domDebug()};
   robustClick(btn);
@@ -404,8 +427,8 @@ async function ensureFollowingOnPage(handle){
     rel=relationship();
     if(rel.followingStatus==='yes') return {ok:true,alreadyFollowing:false,followedNow:true,relationship:rel,debug:domDebug()};
   }
-  // X can update state without exposing the relationship button immediately; do not permanently poison the record.
-  return {ok:true,alreadyFollowing:false,followedNow:true,uncertain:true,relationship:relationship(),debug:domDebug()};
+  // A dispatched click is not proof that X accepted the follow.
+  return {ok:false,error:'Follow was clicked, but X did not confirm Following. Check the profile before retrying.',uncertain:true,relationship:relationship(),debug:domDebug()};
 }
 
 async function markPrepared(job, box){

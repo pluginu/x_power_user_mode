@@ -1358,3 +1358,74 @@ test('eligible USA queue reviews, follows, drafts and automatically sends withou
   assert.equal(h.state.profiles.alice.contacted,true);
   assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),['PROFILE_READY','COLLECT_PROFILE','ENSURE_FOLLOWING','COLLECT_PROFILE','DRAFT','PREPARE_FROM_PROFILE','APPROVE_SEND']);
 });
+
+test('ready profile progresses while background page resources are still loading',async()=>{
+  const h=harness('popup.js');await new Promise(setImmediate);
+  Object.assign(h.state,{runState:'running',workflowTabId:1,workflowStep:'loading',workflowHandle:'alice',workflowDue:Date.now()+120000});
+  h.run(`chrome.tabs.get=async()=>({id:1,status:'loading',url:'https://x.com/alice'});
+    tabMessage=async type=>type==='PROFILE_READY'?{ok:true}:{ok:true,profile:{handle:'alice',followingStatus:'yes',dmStatus:'yes'}};`);
+  await h.run('workflowTick()');
+  assert.equal(h.state.workflowStep,'drafting');
+  assert.equal(h.state.workflowCollectedHandle,'alice');
+});
+
+function followControlsFixture(h){
+  h.run(`visible=()=>true;
+    const control=(text,id='',excluded=false)=>({innerText:text,getAttribute:key=>key==='data-testid'?id:key==='aria-label'?text:'',closest:()=>excluded?{}:null});
+    const target=control('Follow'),suggestion=control('Following','999-unfollow',true),post=control('Following','888-unfollow',true);
+    let controls=[suggestion,post,target];
+    const root={querySelectorAll:selector=>selector==='span,div'?[]:controls};
+    document.querySelector=()=>root;`);
+}
+
+test('profile follow state ignores suggestions and posts and accepts duplicated accessible labels',()=>{
+  const h=harness('content.js');followControlsFixture(h);
+  assert.equal(h.run('relationship().followingStatus'),'no');
+  assert.equal(h.run('findFollowButton()===target'),true);
+  h.run("target.innerText='Following';target.getAttribute=key=>key==='aria-label'?'Following':''");
+  assert.equal(h.run('relationship().followingStatus'),'yes');
+});
+
+test('a suggested account is never used as the profile Follow button',()=>{
+  const h=harness('content.js');followControlsFixture(h);
+  h.run("controls=[control('Follow','999-follow',true)]");
+  assert.equal(h.run('relationship().followingStatus'),'unknown');
+  assert.equal(h.run('findFollowButton()'),null);
+});
+
+test('late profile Follow control is awaited and clicked only once',async()=>{
+  const h=harness('content.js');
+  h.run(`let now=0,clicks=0;Date=class extends Date{static now(){return now}};
+    sleep=async ms=>{now+=ms};location.pathname='/alice';domDebug=()=>({});
+    collectProfile=()=>({handle:'alice'});
+    relationship=()=>({followingStatus:clicks?'yes':now>=2000?'no':'unknown'});
+    findFollowButton=()=>({click(){clicks++}});`);
+  const result=await h.message({type:'ENSURE_FOLLOWING',handle:'alice'});
+  assert.equal(result.followedNow,true);
+  assert.equal(h.run('clicks'),1);
+  assert.ok(h.run('now')>=2000);
+});
+
+for(const followState of ['unknown','no']) test('unconfirmed follow is an explicit failure: '+followState,async()=>{
+  const h=harness('content.js');
+  h.run(`let now=0,clicks=0;Date=class extends Date{static now(){return now}};
+    sleep=async ms=>{now+=ms};location.pathname='/alice';domDebug=()=>({});
+    collectProfile=()=>({handle:'alice'});
+    relationship=()=>({followingStatus:'${followState}'});
+    findFollowButton=()=>({click(){clicks++}});`);
+  const result=await h.message({type:'ENSURE_FOLLOWING',handle:'alice'});
+  assert.equal(result.ok,false);
+  assert.equal(h.run('clicks'),followState==='no'?1:0);
+  assert.match(result.error,/did not appear|did not confirm/);
+  assert.ok(h.run('now')<=10000);
+});
+
+test('unknown follow state is checked before drafting and failure blocks generation',async()=>{
+  const h=harness('popup.js');await new Promise(setImmediate);
+  h.run(`current={handle:'alice',followingStatus:'unknown'};let checked=false;
+    ensureFollowed=async()=>{checked=true;return {ok:false,error:'Follow control missing'}};
+    runtimeMessage=async()=>{throw new Error('Must not draft before follow check')};`);
+  assert.equal(await h.element('draft').onclick(),undefined);
+  assert.equal(h.run('checked'),true);
+  assert.match(h.element('status').textContent,/Follow control missing/);
+});
