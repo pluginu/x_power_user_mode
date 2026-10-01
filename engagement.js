@@ -1,12 +1,20 @@
 // Executed in the X tab. Successful events require a visible confirmation from X.
 let engagementBusy=false;
-async function engagementGuard(job){
+async function engagementGuard(job,replyDialog=null){
   if(!/^[A-Za-z0-9_]{1,15}$/.test(job.handle||'')) throw new Error('Invalid profile handle.');
   const s=await chrome.storage.local.get(null);
   const identity=await chrome.runtime.sendMessage({type:'TAB_ID'});
   if(s.runState!=='running'||!reviewMode(s)||s.engagementRunId!==job.runId||s.workflowTabId!==identity?.tabId||profileKey(s.reviewHandle)!==profileKey(job.handle)) throw new Error('Engagement queue paused or changed.');
-  if(location.pathname.replace(/\/$/,'').toLowerCase()!=='/'+profileKey(job.handle)) throw new Error('The target profile is no longer open.');
-  await assertAudienceAllowed(job.handle,collectProfile());
+  const onProfile=location.pathname.replace(/\/$/,'').toLowerCase()==='/'+profileKey(job.handle);
+  if(replyDialog){
+    const samePost=[...replyDialog.querySelectorAll('a[href*="/status/"]')].some(link=>{
+      try{return new URL(link.href,location.href).origin==='https://x.com'&&new URL(link.href,location.href).pathname===new URL(job.post).pathname}catch{return false}
+    });
+    if(!replyDialog.isConnected||document.querySelector('[role="dialog"]')!==replyDialog||!samePost) throw new Error('The target reply dialog changed.');
+  }
+  if(!onProfile&&!(replyDialog&&/^\/compose\/(post|tweet)\/?$/.test(location.pathname))) throw new Error('The target profile is no longer open.');
+  // X changes the URL to /compose/post while the bound reply dialog is open.
+  await assertAudienceAllowed(job.handle,onProfile?collectProfile():undefined);
   return s;
 }
 function engagementPosts(handle){
@@ -73,15 +81,26 @@ async function executeEngagement(job){
     await engagementGuard(job);reply.click();
     const dialog=await waitForElement(()=>document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]')?.closest('[role="dialog"]'),8000);
     if(!dialog) throw new Error('Reply composer did not open.');
+    await engagementGuard(job,dialog);
     const box=dialog.querySelector('[data-testid="tweetTextarea_0"]');
-    insertIntoComposer(box,job.text.trim());await sleep(500);
-    const button=dialog.querySelector('[data-testid="tweetButton"]');
-    if(readComposer(box)!==job.text.trim()||!button||button.disabled||button.getAttribute('aria-disabled')==='true') throw new Error('Reply text or submit button is not ready.');
+    await insertIntoComposer(box,job.text.trim());
+    let stableSince=null;
+    const button=await waitForElement(()=>{
+      const liveBox=dialog.querySelector('[data-testid="tweetTextarea_0"]');
+      const submit=dialog.querySelector('[data-testid="tweetButton"],[data-testid="tweetButtonInline"]');
+      if(!box.isConnected||liveBox!==box||readComposer(box)!==job.text.trim()||!submit||submit.disabled||submit.getAttribute('aria-disabled')==='true'){stableSince=null;return null}
+      stableSince??=Date.now();
+      return Date.now()-stableSince>=800?submit:null;
+    },8000);
+    if(!button) throw new Error('Reply text or submit button is not ready. Close the reply dialog and resume; nothing was submitted.');
     const oldLinks=new Set([...document.querySelectorAll('[data-testid="toast"] a[href*="/status/"]')].map(a=>a.href));
-    await engagementGuard(job);
-    await chrome.storage.local.set({[pendingKey]:{text:job.text,at:Date.now()}});
-    await engagementGuard(job);
+    await engagementGuard(job,dialog);
     if(!button.isConnected||readComposer(box)!==job.text.trim()) throw new Error('Reply changed before submission.');
+    await chrome.storage.local.set({[pendingKey]:{text:job.text,at:Date.now()}});
+    try{
+      await engagementGuard(job,dialog);
+      if(!button.isConnected||readComposer(box)!==job.text.trim()||button.disabled||button.getAttribute('aria-disabled')==='true') throw new Error('Reply changed before submission.');
+    }catch(e){await chrome.storage.local.remove(pendingKey);throw e}
     button.click();
     const receipt=await waitForElement(()=>[...document.querySelectorAll('[data-testid="toast"] a[href*="/status/"]')].find(a=>!oldLinks.has(a.href)&&a.href!==job.post),12000);
     if(!receipt) throw new Error('Comment submitted but X did not return a post link. Queue paused; no completion recorded and no automatic retry.');

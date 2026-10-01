@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.25';
+const CONTENT_BUILD = '1.9.27';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -193,7 +193,7 @@ async function fillComposer(text,handle){
   for(let attempt=0;attempt<3;attempt++){
     const box=await waitForComposer(attempt===0?90000:10000,handle);
     if(!box){await appendPersistentLog('COMPOSER ATTEMPT FAILED',{attempt:attempt+1,handle,reason:'No stable focused editor'});continue;}
-    if(readComposer(box)!==text.trim()) insertIntoComposer(box,text);
+    if(readComposer(box)!==text.trim()) await insertIntoComposer(box,text);
     // Let the editor's own state update and survive a render before declaring success.
     await sleep(1200);
     if(box.isConnected && composer()===box && readComposer(box)===text.trim()){
@@ -206,7 +206,7 @@ async function fillComposer(text,handle){
 function readComposer(box){
   return String(('value' in box ? box.value : (box.innerText||box.textContent||''))||'').trim();
 }
-function insertIntoComposer(box,text){
+async function insertIntoComposer(box,text){
   box.focus();
   const tag=(box.tagName||'').toLowerCase();
   if(tag==='textarea'||tag==='input'){
@@ -225,16 +225,23 @@ function insertIntoComposer(box,text){
     range.selectNodeContents(box);
     sel.removeAllRanges();
     sel.addRange(range);
-    document.execCommand('insertText',false,text);
+    const handled=document.execCommand('insertText',false,text);
+    // React editors can accept the edit before updating the visible DOM.
+    // Never send a second insertion when the native command was accepted.
+    if(handled) return;
   }catch{}
 
+  await sleep(150);
   if(!readComposer(box)){
     // Fallback for editors that ignore execCommand but react to beforeinput/input.
-    try{box.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text}))}catch{}
+    try{
+      if(!box.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text}))) return;
+    }catch{}
+    await sleep(150);
     if(!readComposer(box)){
       box.textContent=text;
     }
-    try{box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}catch{}
+    try{box.dispatchEvent(new Event('input',{bubbles:true}))}catch{}
   }
   try{box.dispatchEvent(new Event('change',{bubbles:true}))}catch{}
 }

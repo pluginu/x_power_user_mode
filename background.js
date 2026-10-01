@@ -1,3 +1,10 @@
+// Normalize all model-generated strings before they reach UI, logs, or storage.
+function cleanLlmOutput(value){
+  if(typeof value==='string') return value.replace(/[ \t]*[\u2014\u2015][ \t]*/g, ', ');
+  if(Array.isArray(value)) return value.map(cleanLlmOutput);
+  if(value&&typeof value==='object') return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,cleanLlmOutput(item)]));
+  return value;
+}
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
   if(msg.type==='TAB_ID'){send({tabId:sender.tab?.id});return}
   if(msg.type!=='OPENAI_DRAFT') return;
@@ -19,6 +26,7 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
       };
       const body={
         model,
+        instructions:'Do not use em dashes (U+2014) or horizontal bars (U+2015) in any output field. Use commas or periods instead.',
         input:msg.prompt,
         max_output_tokens:1200,
         reasoning:{effort:'minimal'},
@@ -38,10 +46,10 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
       }
       const outputText=(j.output||[]).flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text||'').join('').trim() || j.output_text || '';
       if(!outputText) throw new Error(`OpenAI returned no structured output. Response id: ${j.id||'unknown'}; status: ${j.status||'unknown'}; output types: ${(j.output||[]).map(x=>x.type).join(',')||'none'}`);
-      let parsed; try{parsed=JSON.parse(outputText)}catch(e){throw new Error(`Structured output was not valid JSON: ${e.message}. Raw: ${outputText.slice(0,500)}`)}
+      let parsed; try{parsed=cleanLlmOutput(JSON.parse(outputText))}catch(e){throw new Error(`Structured output was not valid JSON: ${e.message}. Raw: ${outputText.slice(0,500)}`)}
       if(!parsed?.message?.trim()) throw new Error('Structured response parsed, but message was empty.');
       send({ok:true,text:parsed.message.trim(),structured:parsed,debug:{model,responseId:j.id||'',status:j.status||'',elapsedMs:Date.now()-started,usage:j.usage||{},maxOutputTokens:1200,reasoningEffort:'minimal'}});
-    }catch(e){send({ok:false,error:e?.message||String(e),debug:{elapsedMs:Date.now()-started}})}
+    }catch(e){send({ok:false,error:cleanLlmOutput(e?.message||String(e)),debug:{elapsedMs:Date.now()-started}})}
   })();
   return true;
 });

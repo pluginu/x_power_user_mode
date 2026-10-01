@@ -1506,39 +1506,28 @@ test('unknown follow state is checked before drafting and failure blocks generat
 });
 
 test('comment publishes once and counts only after X returns a new post receipt',async()=>{
-  const h=engagementFixture();
-  h.run(`const box={value:''};let opened=false,submitted=false;
-    const submit={isConnected:true,disabled:false,getAttribute:()=>null,click(){submitted=true;clicks++}};
-    const dialog={querySelector:s=>s==='[data-testid="tweetTextarea_0"]'?box:submit};
-    box.closest=()=>dialog;
-    document.querySelector=s=>s==='[role="dialog"]'?null:opened?box:null;
-    document.querySelectorAll=()=>submitted?[{href:'https://x.com/me/status/999'}]:[];
-    article.querySelector=()=>({click(){opened=true}});
-    insertIntoComposer=(b,text)=>{b.value=text};sleep=async()=>{};`);
+  const h=replyFixture();
   const result=await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
   assert.equal(result.ok,true);
-  assert.equal(h.run('clicks'),1);
+  assert.equal(h.run('submitted'),1);
   assert.equal(h.state['engagement:alice'][0].type,'comment');
   assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
+  h.run("opened=false;location.pathname='/alice'");
   await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
-  assert.equal(h.run('clicks'),1);
+  assert.equal(h.run('submitted'),1);
 });
 
 test('comment without a receipt preserves its marker and does not count',async()=>{
-  const h=engagementFixture();
-  h.run(`const box={value:''};let opened=false;
-    const submit={isConnected:true,disabled:false,getAttribute:()=>null,click(){clicks++}};
-    const dialog={querySelector:s=>s==='[data-testid="tweetTextarea_0"]'?box:submit};box.closest=()=>dialog;
-    document.querySelector=s=>s==='[role="dialog"]'?null:opened?box:null;
-    article.querySelector=()=>({click(){opened=true}});
-    insertIntoComposer=(b,text)=>{b.value=text};sleep=async()=>{};`);
+  const h=replyFixture();
+  h.run('document.querySelectorAll=()=>[]');
   const result=await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
   assert.equal(result.ok,false);
   assert.match(result.error,/no automatic retry/);
   assert.ok(h.state['pendingComment:'+likeJob.post]);
   assert.equal(h.state['engagement:alice'],undefined);
+  h.run("opened=false;location.pathname='/alice'");
   await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
-  assert.equal(h.run('clicks'),1);
+  assert.equal(h.run('submitted'),1);
 });
 
 function postScannerFixture(){
@@ -1618,4 +1607,95 @@ test('engage then follow mode blocks DM preparation and sending',async()=>{
   const h=harness('content.js',{outreachMode:'engage_follow'});
   await assert.rejects(h.run("assertReviewDmAllowed('alice')"),/No-DM/);
   await assert.rejects(h.run("assertReviewDmAllowed('alice',true)"),/No-DM/);
+});
+
+test('LLM response handler removes em dashes from messages and all metadata before returning',async()=>{
+  const h=harness('background.js');
+  h.run(`AbortSignal={timeout:()=>null};let request;
+    fetch=async(url,options)=>{
+      request=JSON.parse(options.body);
+      return {ok:true,text:async()=>JSON.stringify({status:'completed',output_text:JSON.stringify({
+        message:'Hello — great post―thanks',personalization_basis:'Art—design',
+        greeting_context:'Morning — local',safety_check:'passed',
+        nested:{items:['One—two',null,7]}
+      })})};
+    };`);
+  const result=await h.message({type:'OPENAI_DRAFT',apiKey:'test-key',prompt:'Write a reply'});
+  assert.equal(result.ok,true);
+  assert.equal(result.text,'Hello, great post, thanks');
+  assert.equal(result.structured.personalization_basis,'Art, design');
+  assert.equal(result.structured.greeting_context,'Morning, local');
+  assert.equal(result.structured.nested.items[0],'One, two');
+  assert.equal(result.structured.nested.items[1],null);
+  assert.equal(result.structured.nested.items[2],7);
+  assert.doesNotMatch(JSON.stringify(result),/[\u2014\u2015]/);
+  assert.match(h.run('request.instructions'),/Do not use em dashes/);
+});
+
+test('LLM normalization preserves hyphens and line breaks',()=>{
+  const h=harness('background.js');
+  assert.equal(h.run("cleanLlmOutput('one-to-one\\nNew paragraph')"),'one-to-one\nNew paragraph');
+});
+
+test('accepted editor insertion does not dispatch a second insertion before React renders',async()=>{
+  const h=harness('content.js');
+  h.run(`let inserted=0,events=0;const box={tagName:'DIV',textContent:'',focus(){},dispatchEvent(){events++;return true}};
+    window.getSelection=()=>({removeAllRanges(){},addRange(){}});
+    document.createRange=()=>({selectNodeContents(){}});
+    document.execCommand=()=>{inserted++;return true};`);
+  await h.run("insertIntoComposer(box,'Hello')");
+  assert.equal(h.run('inserted'),1);
+  assert.equal(h.run('events'),0);
+});
+
+test('editor-handled beforeinput does not trigger a duplicate fallback',async()=>{
+  const h=harness('content.js');
+  h.run(`let events=[];sleep=async()=>{};InputEvent=class {constructor(type){this.type=type}};
+    const box={tagName:'DIV',textContent:'',focus(){},dispatchEvent(event){events.push(event.type);return false}};
+    window.getSelection=()=>({removeAllRanges(){},addRange(){}});
+    document.createRange=()=>({selectNodeContents(){}});document.execCommand=()=>false;`);
+  await h.run("insertIntoComposer(box,'Hello')");
+  assert.equal(h.run('JSON.stringify(events)'),JSON.stringify(['beforeinput']));
+  assert.equal(h.run('box.textContent'),'');
+});
+
+function replyFixture(){
+  const h=engagementFixture();
+  h.state.profiles={alice:{handle:'alice'}};
+  h.run(`let now=Date.now(),opened=false,submitted=0;
+    Date=class extends Date {static now(){return now}};sleep=async ms=>{now+=ms};
+    const box={value:'',isConnected:true};
+    const submit={isConnected:true,disabled:false,getAttribute:()=>null,click(){submitted++}};
+    const dialog={isConnected:true,querySelector:s=>s.includes('tweetTextarea')?box:submit,
+      querySelectorAll:()=>[{href:'https://x.com/alice/status/123'}]};
+    box.closest=()=>dialog;
+    button.click=()=>{opened=true;location.pathname='/compose/post'};
+    document.querySelector=s=>opened?(s.includes('tweetTextarea')?box:dialog):null;
+    document.querySelectorAll=()=>submitted?[{href:'https://x.com/me/status/456'}]:[];
+    insertIntoComposer=async(b,text)=>{b.value=text};
+    waitForElement=async(fn,timeout=1000)=>{for(let i=0;i<=timeout/200;i++){const result=fn();if(result)return result;await sleep(200)}return null};`);
+  return h;
+}
+test('reply survives compose URL, waits for stable text, and submits once with a receipt',async()=>{
+  const h=replyFixture();
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.equal(h.run('submitted'),1);
+  assert.equal(h.state['engagement:alice'][0].type,'comment');
+  assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
+});
+test('duplicated reply is never submitted or marked pending',async()=>{
+  const h=replyFixture();h.run('insertIntoComposer=async(b,text)=>{b.value=text+text}');
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/not ready/);
+  assert.equal(h.run('submitted'),0);
+  assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
+});
+test('reply dialog for a different post cannot bypass the navigation guard',async()=>{
+  const h=replyFixture();h.run("dialog.querySelectorAll=()=>[{href:'https://x.com/bob/status/999'}]");
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/target reply dialog changed/);
+  assert.equal(h.run('submitted'),0);
 });
