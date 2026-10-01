@@ -1695,6 +1695,19 @@ test('reply survives compose URL, waits for stable text, and submits once with a
   assert.equal(h.state['engagement:alice'][0].type,'comment');
   assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
 });
+test('reply waits one second after text insertion before looking for the submit button',async()=>{
+  const h=replyFixture();
+  h.run(`let insertedAt=null,firstSubmitQueryAt=null;
+    insertIntoComposer=async(b,text)=>{b.value=text;insertedAt=Date.now()};
+    dialog.querySelector=s=>{
+      if(s.includes('tweetTextarea')) return box;
+      firstSubmitQueryAt??=Date.now();
+      return submit;
+    };`);
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.ok(h.run('firstSubmitQueryAt-insertedAt')>=1000);
+});
 test('duplicated reply is never submitted or marked pending',async()=>{
   const h=replyFixture();h.run('insertIntoComposer=async(b,text)=>{b.value=text+text}');
   const result=await h.message({...likeJob,action:'comment',text:'Hello'});

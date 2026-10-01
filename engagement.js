@@ -104,6 +104,9 @@ async function executeEngagement(job){
     await engagementGuard(job,dialog);
     const box=dialog.querySelector('[data-testid="tweetTextarea_0"]');
     await insertIntoComposer(box,job.text.trim());
+    // Let X finish reacting to the editor input before looking for its Reply
+    // control. Querying immediately can race the render that creates/enables it.
+    await sleep(1000);
     let stableSince=null;
     const button=await waitForElement(()=>{
       const liveBox=dialog.querySelector('[data-testid="tweetTextarea_0"]');
