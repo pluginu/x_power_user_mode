@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.33';
+const CONTENT_BUILD = '1.9.35';
 let prepareStartupTimer=null,prepareResumeTimer=null;
 function extensionContextInvalidated(error){
   return /extension context invalidated/i.test(String(error?.message||error||''));
@@ -226,32 +226,19 @@ async function insertIntoComposer(box,text){
     return;
   }
 
-  // contenteditable/Lexical/ProseMirror editors: use the live selection first.
+  // Give X's Lexical editor one paste operation. Do not also mutate textContent
+  // or dispatch input/change: X can reconcile those as a second insertion.
+  // This does not read or overwrite the user's system clipboard.
+  const transfer=new DataTransfer();
+  transfer.setData('text/plain',text);
   try{
-    const sel=window.getSelection();
+    const selection=window.getSelection();
     const range=document.createRange();
     range.selectNodeContents(box);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    const handled=document.execCommand('insertText',false,text);
-    // React editors can accept the edit before updating the visible DOM.
-    // Never send a second insertion when the native command was accepted.
-    if(handled) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
   }catch{}
-
-  await sleep(150);
-  if(!readComposer(box)){
-    // Fallback for editors that ignore execCommand but react to beforeinput/input.
-    try{
-      if(!box.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:text}))) return;
-    }catch{}
-    await sleep(150);
-    if(!readComposer(box)){
-      box.textContent=text;
-    }
-    try{box.dispatchEvent(new Event('input',{bubbles:true}))}catch{}
-  }
-  try{box.dispatchEvent(new Event('change',{bubbles:true}))}catch{}
+  box.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));
 }
 function findSendButton(box=composer()){
   const isSend=el=>{

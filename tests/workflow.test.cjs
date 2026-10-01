@@ -1631,7 +1631,18 @@ test('LLM response handler removes em dashes from messages and all metadata befo
   assert.equal(result.structured.nested.items[1],null);
   assert.equal(result.structured.nested.items[2],7);
   assert.doesNotMatch(JSON.stringify(result),/[\u2014\u2015]/);
-  assert.match(h.run('request.instructions'),/Do not use em dashes/);
+  assert.match(h.run('request.instructions'),/clean plain text/);
+});
+
+test('LLM message cleanup removes escapes, formatting, emoji, and line breaks',async()=>{
+  const h=harness('background.js');
+  h.run(`AbortSignal={timeout:()=>null};fetch=async()=>({ok:true,text:async()=>JSON.stringify({status:'completed',output_text:JSON.stringify({
+    message:'**Hello**\\\\n great post 😀',personalization_basis:'Post',greeting_context:'',safety_check:'passed'
+  })})})`);
+  const result=await h.message({type:'OPENAI_DRAFT',apiKey:'test-key',prompt:'Write a reply'});
+  assert.equal(result.ok,true);
+  assert.equal(result.text,'Hello great post');
+  assert.equal(result.structured.message,result.text);
 });
 
 test('LLM normalization preserves hyphens and line breaks',()=>{
@@ -1648,26 +1659,19 @@ test('extension updates reload existing X tabs so stale content scripts are repl
   assert.deepEqual(JSON.parse(h.run('JSON.stringify(reloaded)')),[11,12]);
 });
 
-test('accepted editor insertion does not dispatch a second insertion before React renders',async()=>{
+test('contenteditable insertion sends one paste without a second mutation event',async()=>{
   const h=harness('content.js');
-  h.run(`let inserted=0,events=0;const box={tagName:'DIV',textContent:'',focus(){},dispatchEvent(){events++;return true}};
+  h.run(`let events=[],pasted='';
+    DataTransfer=class {setData(type,value){this.value=value}getData(){return this.value}};
+    ClipboardEvent=class {constructor(type,options){this.type=type;this.clipboardData=options.clipboardData}};
     window.getSelection=()=>({removeAllRanges(){},addRange(){}});
     document.createRange=()=>({selectNodeContents(){}});
-    document.execCommand=()=>{inserted++;return true};`);
+    const box={tagName:'DIV',textContent:'',focus(){},dispatchEvent(event){events.push(event.type);pasted=event.clipboardData.getData('text/plain');return true}};
+    document.execCommand=()=>{throw new Error('execCommand must not be used')};`);
   await h.run("insertIntoComposer(box,'Hello')");
-  assert.equal(h.run('inserted'),1);
-  assert.equal(h.run('events'),0);
-});
-
-test('editor-handled beforeinput does not trigger a duplicate fallback',async()=>{
-  const h=harness('content.js');
-  h.run(`let events=[];sleep=async()=>{};InputEvent=class {constructor(type){this.type=type}};
-    const box={tagName:'DIV',textContent:'',focus(){},dispatchEvent(event){events.push(event.type);return false}};
-    window.getSelection=()=>({removeAllRanges(){},addRange(){}});
-    document.createRange=()=>({selectNodeContents(){}});document.execCommand=()=>false;`);
-  await h.run("insertIntoComposer(box,'Hello')");
-  assert.equal(h.run('JSON.stringify(events)'),JSON.stringify(['beforeinput']));
+  assert.equal(h.run('pasted'),'Hello');
   assert.equal(h.run('box.textContent'),'');
+  assert.equal(h.run('JSON.stringify(events)'),JSON.stringify(['paste']));
 });
 
 function replyFixture(){

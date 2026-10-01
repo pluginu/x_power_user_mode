@@ -1,4 +1,4 @@
-# X Power User Plugin v1.9.33
+# X Power User Plugin v1.9.35
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -15,7 +15,15 @@ The plugin folder is `x_power_user_plugin`, matching the display name **X Power 
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder and click **Reload** in `chrome://extensions`. Existing X tabs reload automatically so the updated content script replaces the invalidated build. Confirm **v1.9.33** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder and click **Reload** in `chrome://extensions`. Existing X tabs reload automatically so the updated content script replaces the invalidated build. Confirm **v1.9.35** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.35: paste replies through one editor event
+
+Public replies now enter X's contenteditable composer through one paste event. The extension no longer combines a direct DOM replacement with an input notification, which X could reconcile as two copies. The paste data stays inside the page event and does not read or replace the system clipboard.
+
+## v1.9.34: prevent duplicated reply text
+
+Public replies now populate X's contenteditable composer with one deterministic replacement and one input notification instead of `execCommand`, which X could process twice. Submission still requires an exact stable text match. Generation requests now require one-line plain ASCII text, and returned messages are cleaned of emoji, markdown, escape sequences, line breaks, and unsupported characters before use.
 
 ## v1.9.33: recognize alternate X Reply controls
 

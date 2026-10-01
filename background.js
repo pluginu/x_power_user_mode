@@ -5,6 +5,17 @@ function cleanLlmOutput(value){
   if(value&&typeof value==='object') return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,cleanLlmOutput(item)]));
   return value;
 }
+function cleanGeneratedMessage(value){
+  return cleanLlmOutput(String(value||''))
+    .replace(/\\(?:n|r|t)/g,' ')
+    .replace(/[\r\n\t]+/g,' ')
+    .replace(/[\u2018\u2019]/g,"'")
+    .replace(/[\u201C\u201D]/g,'')
+    .replace(/[^\x20-\x7E]/g,'')
+    .replace(/[\\`*_#~|<>\[\]{}]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
 
 // Manifest content scripts are not injected again into tabs that were already
 // open when an unpacked extension is reloaded. Reload those X tabs on updates so
@@ -37,7 +48,7 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
       };
       const body={
         model,
-        instructions:'Do not use em dashes (U+2014) or horizontal bars (U+2015) in any output field. Use commas or periods instead.',
+        instructions:'Return clean plain text. In the message field, use ASCII letters, numbers, spaces, and ordinary punctuation only. Do not use emoji, symbols, markdown, quotation marks around the message, backslashes, escape sequences, line breaks, em dashes (U+2014), or horizontal bars (U+2015). Use commas or periods instead. Return no preamble or commentary.',
         input:msg.prompt,
         max_output_tokens:1200,
         reasoning:{effort:'minimal'},
@@ -58,8 +69,9 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
       const outputText=(j.output||[]).flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text||'').join('').trim() || j.output_text || '';
       if(!outputText) throw new Error(`OpenAI returned no structured output. Response id: ${j.id||'unknown'}; status: ${j.status||'unknown'}; output types: ${(j.output||[]).map(x=>x.type).join(',')||'none'}`);
       let parsed; try{parsed=cleanLlmOutput(JSON.parse(outputText))}catch(e){throw new Error(`Structured output was not valid JSON: ${e.message}. Raw: ${outputText.slice(0,500)}`)}
-      if(!parsed?.message?.trim()) throw new Error('Structured response parsed, but message was empty.');
-      send({ok:true,text:parsed.message.trim(),structured:parsed,debug:{model,responseId:j.id||'',status:j.status||'',elapsedMs:Date.now()-started,usage:j.usage||{},maxOutputTokens:1200,reasoningEffort:'minimal'}});
+      parsed.message=cleanGeneratedMessage(parsed?.message);
+      if(!parsed.message) throw new Error('Structured response parsed, but message was empty.');
+      send({ok:true,text:parsed.message,structured:parsed,debug:{model,responseId:j.id||'',status:j.status||'',elapsedMs:Date.now()-started,usage:j.usage||{},maxOutputTokens:1200,reasoningEffort:'minimal'}});
     }catch(e){send({ok:false,error:cleanLlmOutput(e?.message||String(e)),debug:{elapsedMs:Date.now()-started}})}
   })();
   return true;
