@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 let current = null;
 let timer = null;
-const BUILD = '1.9.31';
+const BUILD = '1.9.32';
 const PROFILE_LOAD_MS = 120000;
 const PREPARE_MS = 360000;
 let lastWorkflowLog = '';

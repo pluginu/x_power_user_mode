@@ -1708,6 +1708,19 @@ test('reply waits one second after text insertion before looking for the submit 
   assert.equal(result.ok,true,result.error);
   assert.ok(h.run('firstSubmitQueryAt-insertedAt')>=1000);
 });
+test('reply pauses before the actual submit click',async()=>{
+  const h=replyFixture();
+  h.run(`let readyAt=null,clickedAt=null;
+    submit.click=()=>{clickedAt=Date.now();submitted++};
+    dialog.querySelector=s=>{
+      if(s.includes('tweetTextarea')) return box;
+      readyAt??=Date.now();
+      return submit;
+    };`);
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.ok(h.run('clickedAt-readyAt')>=2300);
+});
 test('duplicated reply is never submitted or marked pending',async()=>{
   const h=replyFixture();h.run('insertIntoComposer=async(b,text)=>{b.value=text+text}');
   const result=await h.message({...likeJob,action:'comment',text:'Hello'});

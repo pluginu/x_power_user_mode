@@ -121,6 +121,9 @@ async function executeEngagement(job){
     if(!button.isConnected||readComposer(box)!==job.text.trim()) throw new Error('Reply changed before submission.');
     await chrome.storage.local.set({[pendingKey]:{text:job.text,at:Date.now()}});
     try{
+      // Pause on the fully ready composer before the actual Reply click. This is
+      // deliberately separate from the render/stability waits above.
+      await sleep(1500);
       await engagementGuard(job,dialog);
       if(!button.isConnected||readComposer(box)!==job.text.trim()||button.disabled||button.getAttribute('aria-disabled')==='true') throw new Error('Reply changed before submission.');
     }catch(e){await chrome.storage.local.remove(pendingKey);throw e}
