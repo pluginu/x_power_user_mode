@@ -1,3 +1,38 @@
+# X Power User Mode — SIN Outreach Assistant v1.9.19
+
+A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
+
+## Install in Chrome
+
+1. Download this repository using **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/pluginu/x_power_user_mode.git`.
+2. Open `chrome://extensions` in Chrome and enable **Developer mode**.
+3. Click **Load unpacked** and select the extracted/cloned folder containing `manifest.json` (not its parent folder or the ZIP).
+4. Open `https://x.com`, sign in, and refresh the tab. Open **SIN Outreach Assistant** from Chrome’s extensions menu; pin it for easier access.
+5. Open the extension’s **Side Panel**, enter your OpenAI API key, project facts, and one X handle per line in **Profiles**. Draft generation requires an API key with API access and available billing/credits.
+6. Select **Existing DM workflow**. Leave **USA only** and **Check follower count** enabled. Set minimum/maximum followers and optionally **Must follow me**. The default minimum is 0 with no maximum; the follower count must still be readable.
+7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
+8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
+
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.19** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## USA-only profile and follower review
+
+**USA only is enabled by default**, including for existing installations without this setting. It checks the profile’s stated location before following, drafting, preparing, or sending. Supported forms include `USA`, `United States`, `California`, `Austin, TX`, and `Atlanta, Georgia, USA`. Bare abbreviations such as `CA`, ambiguous `Georgia`, city-only locations, blank locations, and unsupported/multiple locations are skipped. This is a conservative text filter, not verified residency or nationality; a profile’s own location may be inaccurate. Turn it off only if you want other locations allowed.
+
+**Follower review** checks the displayed follower count against your limits and optionally requires the visible **Follows you** relationship. Counts like `1,234` and `1.2K` are accepted; abbreviated counts use the displayed rounded value. Missing/unreadable counts fail review. This does not inspect individual followers or infer their country, authenticity, or quality. Profile review here means these configured eligibility checks, not a human review or an AI quality score.
+
+A failed check saves the profile as **skipped**, with an eligibility reason, and moves to the next profile without following or drafting. These records survive reloads and appear in exports/backups. Changing filters does not automatically requeue skipped profiles. **Reset progress** makes them eligible for collection again but also clears all contact and engagement history; use it only when intentionally restarting the entire queue.
+
+Automatic DMs require **Existing DM workflow** and **Automatically send messages**. **Follow review · no DMs** still blocks all DMs, and **Staged outreach · manual approval** still requires manual interaction records and per-message approval. Location and follower checks apply in these modes too. The content script rechecks current settings before a send, so an already prepared draft cannot bypass a newly enabled filter. Send and Follow controls receive one activation per attempt; uncertain sends are flagged for review rather than automatically retried.
+
+## Local validation
+
+Run `node --test tests/workflow.test.cjs` with Node.js. Tests exercise eligibility rejection, queue progression, follow/send action guards, persistence, and automatic sending using mocked Chrome/X behavior. Live X UI compatibility still needs verification after installation; no live follows or DMs were performed during development.
+
+## Earlier releases
+
+The history below describes earlier builds. The v1.9.19 eligibility rules above apply to their workflows.
+
 ## v1.9.18: manual engagement and staged DM review
 
 In **Outreach workflow**, select **Follow review · no DMs** or **Staged outreach · manual approval**. Changing modes pauses the existing queue and turns automatic sending off. Review modes do not automate likes, comments, or follows.

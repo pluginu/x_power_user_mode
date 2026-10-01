@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.18';
+const CONTENT_BUILD = '1.9.19';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -384,8 +384,14 @@ async function updatePendingDm(patch,job){
   if(patch.stage && patch.stage!==cur.stage) await appendPersistentLog('DM STAGE',{handle:cur.handle,from:cur.stage,to:patch.stage,url:location.href,error:patch.error});
 }
 
-async function ensureFollowingOnPage(){
-  if(reviewMode(await chrome.storage.local.get("outreachMode"))) throw new Error("Follow manually on X in review mode.");
+async function ensureFollowingOnPage(handle){
+  const settings=await chrome.storage.local.get(null);
+  if(reviewMode(settings)) throw new Error("Follow manually on X in review mode.");
+  // Sample the live recipient after the storage await, before the single Follow click.
+  const profile=collectProfile();
+  if(normHandle(profile.handle)!==normHandle(handle)) throw new Error('Profile changed before audience review.');
+  const review=audienceReview(settings,profile);
+  if(!review.eligible) throw new Error(review.reason);
   let rel=relationship();
   if(rel.followingStatus==='yes') return {ok:true,alreadyFollowing:true,followedNow:false,relationship:rel,debug:domDebug()};
   if(rel.followingStatus==='unknown') return {ok:true,alreadyFollowing:false,followedNow:false,uncertain:true,relationship:rel,debug:domDebug()};
@@ -551,7 +557,7 @@ function profileReadiness(handle){
   if(suspended) return {ok:false,accountSuspended:true,handle:normHandle(handle),version:CONTENT_BUILD,reason:suspended};
   const notice=sameProfile && missingAccountNotice();
   if(notice) return {ok:false,accountNotFound:true,handle:normHandle(handle),version:CONTENT_BUILD,reason:notice};
-  const signature=JSON.stringify([path,name,txt('[data-testid="UserDescription"]'),countFrom('following'),countFrom('followers')]);
+  const signature=JSON.stringify([path,name,txt('[data-testid="UserDescription"]'),countFrom('following'),countFrom('followers'),txt('span[data-testid="UserLocation"]')]);
   if(signature!==readinessSample.signature) readinessSample={signature,since:Date.now()};
   const ok=sameProfile && !!name && document.readyState!=='loading' && Date.now()-readinessSample.since>=1500;
   return {ok,version:CONTENT_BUILD,reason:!sameProfile?'The target profile route is not open':!name?'Waiting for profile header':!ok?'Waiting for profile data to settle':'ready',debug:{url:location.href,readyState:document.readyState,hasName:!!name,stableMs:Date.now()-readinessSample.since}};
@@ -579,7 +585,7 @@ chrome.runtime.onMessage.addListener((msg,sender,send)=>{
     return true;
   }
   if(msg.type==='ENSURE_FOLLOWING'){
-    (async()=>{try{send(await ensureFollowingOnPage())}catch(e){send({ok:false,error:e.message,debug:domDebug()})}})();
+    (async()=>{try{send(await ensureFollowingOnPage(msg.handle))}catch(e){send({ok:false,error:e.message,debug:domDebug()})}})();
     return true;
   }
   if(msg.type==='PREPARE_FROM_PROFILE'){

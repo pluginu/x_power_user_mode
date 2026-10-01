@@ -1,13 +1,13 @@
 const $ = id => document.getElementById(id);
 let current = null;
 let timer = null;
-const BUILD = '1.9.18';
+const BUILD = '1.9.19';
 const PROFILE_LOAD_MS = 120000;
 const PREPARE_MS = 360000;
 let lastWorkflowLog = '';
 let lastWorkflowLogAt = 0;
 
-const fields = ['apiKey','marketCap','projectFacts','minDelay','maxDelay','handles','messageLength','referenceMode','referenceText','outreachMode','requiredLikes','requiredComments','engagementDays','timelineMonitoring'];
+const fields = ['apiKey','marketCap','projectFacts','minDelay','maxDelay','handles','messageLength','referenceMode','referenceText','outreachMode','requiredLikes','requiredComments','engagementDays','timelineMonitoring','usaOnly','followerReview','minFollowers','maxFollowers','requireFollowBack'];
 const savedFieldValues={};
 // Legacy brand names are accepted only for migration and backup compatibility.
 function currentBrand(text){return String(text||'').replace(/(?<![@/\w])SIN69\b/gi,'SIN')}
@@ -294,7 +294,7 @@ async function workflowTick(){
       status(`Step 1/3: Collect + save profile for @${st.workflowHandle}…`);
       const profile=await $('collect').onclick();
       if(!profile||profile.handle.toLowerCase()!==st.workflowHandle.toLowerCase()) throw new Error('Could not collect the intended profile.');
-      if(['account_not_found','account_suspended'].includes(profile.processingStatus)||profile.dmStatus==='no'){await openNext(true);return}
+      if(['skipped','account_not_found','account_suspended'].includes(profile.processingStatus)||profile.dmStatus==='no'){await openNext(true);return}
       await chrome.storage.local.set({workflowStep:'drafting',workflowCollectedHandle:profile.handle.toLowerCase()});
     }else if(step==='drafting'){
       current=st.workflowCurrent;
@@ -377,6 +377,8 @@ async function collect(){
     processingStatus='eligibility_unknown';
     reason='X did not expose enough UI evidence to prove following/DM state. This is not a terminal skip.';
   }
+  const review=audienceReview(await chrome.storage.local.get(null),current);
+  if(!review.eligible){processingStatus='skipped';reason=review.reason;}
   await saveProfile(current,{processingStatus,eligibilityReason:reason,eligibilityCheckedAt:new Date().toISOString(),visited:true});
   await chrome.storage.local.set({workflowCurrent:current});
   $('profile').textContent=JSON.stringify({...current,processingStatus,eligibilityReason:reason},null,2);
@@ -386,6 +388,7 @@ async function collect(){
 
 async function ensureFollowed(){
   if(!current?.handle) return {ok:false,error:'No current profile.'};
+  await assertAudienceAllowed(current.handle,current);
   if(current.followingStatus==='yes') return {ok:true,alreadyFollowing:true,profile:current};
   status(`Checking follow state for @${current.handle}…`);
   const r=await tabMessage('ENSURE_FOLLOWING',{handle:current.handle},18000);

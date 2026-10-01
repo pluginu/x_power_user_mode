@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="styles.css"><title>SIN Outreach</title></head><body><div class="wrap"><h1>SIN Outreach</h1><p id="build" class="sub">v1.9.18</p><p class="sub">Start runs collection, drafting, and DM preparation automatically. Enable automatic sending to run the queue without per-message approval.</p>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="styles.css"><title>SIN Outreach</title></head><body><div class="wrap"><h1>SIN Outreach</h1><p id="build" class="sub">v1.9.19</p><p class="sub">Start runs collection, drafting, and DM preparation automatically. Enable automatic sending to run the queue without per-message approval.</p>
 <label>OpenAI API key <input id="apiKey" type="password" placeholder="sk-..."></label><label>Market cap / project context <input id="marketCap" placeholder="$123K market cap (current context only)"></label><label>Project facts <textarea id="projectFacts" rows="4" placeholder="SIN community purpose, links, factual claims only."></textarea></label>
 <fieldset class="draft-options"><legend>Outreach workflow</legend>
 <label>Mode<select id="outreachMode"><option value="standard">Existing DM workflow</option><option value="follow_review">Follow review · no DMs</option><option value="staged_review">Staged outreach · manual approval</option></select></label>
@@ -10,6 +10,14 @@
 <label>Post URL (required for likes/comments)<input id="engagementPost" placeholder="https://x.com/handle/status/123"></label>
 <div class="buttons"><button id="reviewNext">Open next for review</button><button id="recordLike">Record like</button><button id="recordComment">Record comment</button><button id="recordFollow">Record follow</button><button id="undoEngagement">Undo last record</button></div>
 <p id="engagementStatus" class="sub"></p><div id="reviewQueue"></div>
+</fieldset>
+<fieldset class="draft-options"><legend>Profile and follower review</legend>
+<label>Location filter<select id="usaOnly"><option value="on" selected>USA only</option><option value="off">Any location</option></select></label>
+<p class="sub">Uses stated profile location, not verified residency. Missing or ambiguous locations are skipped. Use explicit USA, a full state name, or City, State.</p>
+<label>Follower review<select id="followerReview"><option value="on" selected>Check follower count</option><option value="off">Off</option></select></label>
+<div class="row"><label>Minimum followers<input id="minFollowers" type="number" min="0" step="1" value="0"></label><label>Maximum followers<input id="maxFollowers" type="number" min="0" step="1" placeholder="No maximum"></label></div>
+<label>Must follow me<select id="requireFollowBack"><option value="off">No</option><option value="on">Yes</option></select></label>
+<p class="sub">Start checks each profile before following or drafting. Failed checks are saved as skipped and the queue continues. Enable Automatically send messages in Existing DM workflow to send after these checks without another approval click. Review modes keep their manual approval rules.</p>
 </fieldset>
 <fieldset class="draft-options"><legend>Message options</legend>
 <label>Message length<select id="messageLength"><option value="short">Short · 30–45 words</option><option value="usual" selected>Usual · 60–90 words</option><option value="long">Extra long · 150–220 words</option></select></label>

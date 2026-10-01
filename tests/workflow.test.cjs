@@ -5,6 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 function harness(file,state={}){
+  state.usaOnly??='off';state.followerReview??='off';
   const elements={};
   let listener;
   const element=id=>elements[id] ||= {value:'',textContent:'',listeners:{},addEventListener(name,fn){this.listeners[name]=fn},classList:{contains:()=>true}};
@@ -1260,4 +1261,100 @@ test('timeline highlights only listed authors and removes highlights when disabl
   assert.equal(h.run('badge'),null);
   h.state.handles='alice';h.state.timelineMonitoring='off';await h.run('highlightTimelineMatches()');
   assert.equal(h.run('matched'),false);
+});
+
+test('USA location filter accepts explicit forms and rejects ambiguous or unsupported locations',()=>{
+  const h=harness('popup.js');
+  for(const location of ['USA','United States','U.S.A.','California','Austin, TX','Atlanta, Georgia, USA','New York, NY','Washington, DC']){
+    assert.equal(h.run(`statedUsLocation(${JSON.stringify(location)})`),true,location);
+  }
+  for(const location of ['', 'Georgia','CA','New York / London','London, UK','Toronto, Ontario','Earth','Paris','USA / Canada','Not USA']){
+    assert.equal(h.run(`statedUsLocation(${JSON.stringify(location)})`),false,location);
+  }
+});
+
+test('follower review parses displayed counts, enforces limits and follow-back, and defaults on',()=>{
+  const h=harness('popup.js');
+  assert.equal(h.run("followerCount('1.2K Followers')"),1200);
+  assert.equal(h.run("followerCount('1,234')"),1234);
+  assert.equal(h.run("followerCount('2M')"),2000000);
+  assert.equal(h.run("followerCount('12,34')"),null);
+  assert.equal(h.run("audienceReview({}, {location:'USA',followers:'0'}).eligible"),true);
+  for(const expr of [
+    "audienceReview({}, {location:'UK',followers:'1000'})",
+    "audienceReview({}, {location:'USA',followers:''})",
+    "audienceReview({minFollowers:100}, {location:'USA',followers:'99'})",
+    "audienceReview({maxFollowers:999}, {location:'USA',followers:'1K'})",
+    "audienceReview({minFollowers:100,maxFollowers:10}, {location:'USA',followers:'50'})",
+    "audienceReview({requireFollowBack:'on'}, {location:'USA',followers:'1000',followsYou:false})"
+  ]) assert.equal(h.run(expr+'.eligible'),false,expr);
+  assert.equal(h.run("audienceReview({minFollowers:100,maxFollowers:1000,requireFollowBack:'on'},{location:'USA',followers:'1K',followsYou:true}).eligible"),true);
+});
+
+for(const profile of [{location:'UK',followers:'1000'}, {location:'USA',followers:''}, {location:'USA',followers:'9'}]){
+  test(`failed audience review skips and advances without follow or draft: ${JSON.stringify(profile)}`,async()=>{
+    const h=harness('popup.js',{usaOnly:'on',followerReview:'on',minFollowers:10});await new Promise(setImmediate);
+    h.element('handles').value='alice\nbob';
+    Object.assign(h.state,{runState:'running',autoSend:true,workflowTabId:1,workflowStep:'loading',workflowHandle:'alice',workflowDue:Date.now()+120000});
+    h.run(`tabMessage=async type=>{
+      if(type==='PROFILE_READY') return {ok:true};
+      if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:'alice',followingStatus:'no',dmStatus:'yes',...${JSON.stringify(profile)}}};
+      throw new Error('Unexpected action: '+type);
+    };runtimeMessage=async()=>{throw new Error('Must not draft')};`);
+    await h.run('workflowTick()');
+    assert.equal(h.state.profiles.alice.processingStatus,'skipped');
+    assert.match(h.state.profiles.alice.eligibilityReason,/review:/);
+    assert.equal(h.state.workflowHandle,'bob');
+    assert.equal(h.state.runState,'running');
+    assert.equal(h.state['processedProfile:alice'].processingStatus,'skipped');
+  });
+}
+
+test('live follow guard rejects wrong recipient and foreign location, then follows an eligible profile once',async()=>{
+  const h=harness('content.js',{usaOnly:'on',followerReview:'on',minFollowers:100});
+  h.run(`let clicks=0;let profile={handle:'bob',location:'USA',followers:'1K'};
+    collectProfile=()=>profile;relationship=()=>({followingStatus:clicks?'yes':'no'});
+    const button={click(){clicks++}};findFollowButton=()=>button;domDebug=()=>({});sleep=async()=>{};`);
+  assert.equal((await h.message({type:'ENSURE_FOLLOWING',handle:'alice'})).ok,false);
+  h.run("profile={handle:'alice',location:'UK',followers:'1K'}");
+  assert.equal((await h.message({type:'ENSURE_FOLLOWING',handle:'alice'})).ok,false);
+  assert.equal(h.run('clicks'),0);
+  h.run("profile.location='USA'");
+  assert.equal((await h.message({type:'ENSURE_FOLLOWING',handle:'alice'})).ok,true);
+  assert.equal((await h.message({type:'ENSURE_FOLLOWING',handle:'alice'})).alreadyFollowing,true);
+  assert.equal(h.run('clicks'),1);
+});
+
+test('new audience settings block a prepared automatic DM before Send',async()=>{
+  const h=harness('content.js',{profiles:{alice:{handle:'alice',location:'UK',followers:'1K'}},runState:'running',autoSend:true});
+  h.state.pendingDmPrepare={handle:'alice',stage:'prepared',draft:'hello',preparedUrl:'https://x.com/i/chat/123'};
+  h.run(`let clicks=0;domDebug=()=>({});robustClick=()=>{clicks++}`);
+  h.state.usaOnly='on';
+  const result=await h.message({type:'APPROVE_SEND',expectedHandle:'alice',automatic:true});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/USA-only/);
+  assert.equal(h.run('clicks'),0);
+});
+
+test('eligible USA queue reviews, follows, drafts and automatically sends without per-profile clicks',async()=>{
+  const h=harness('popup.js',{usaOnly:'on',followerReview:'on',minFollowers:100,maxFollowers:2000,requireFollowBack:'on'});
+  await new Promise(setImmediate);
+  h.element('handles').value='alice';h.element('apiKey').value='test-key';
+  Object.assign(h.state,{autoSend:true,runState:'running',workflowStep:'loading',workflowHandle:'alice',workflowTabId:1,workflowDue:Date.now()+120000});
+  h.run(`let calls=[],followed=false;setTimeout=fn=>{fn();return 0};
+    runtimeMessage=async()=>{calls.push('DRAFT');return {ok:true,text:'Hello Alice'}};
+    tabMessage=async type=>{
+      calls.push(type);
+      if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:'alice',location:'Austin, TX',followers:'1K',followsYou:true,followingStatus:followed?'yes':'no',dmStatus:'yes'}};
+      if(type==='ENSURE_FOLLOWING'){followed=true;return {ok:true,followedNow:true}};
+      if(type==='PREPARE_FROM_PROFILE'){
+        const p=(await chrome.storage.local.get('pendingDmPrepare')).pendingDmPrepare;
+        await chrome.storage.local.set({pendingDmPrepare:{...p,stage:'prepared'}});
+      }
+      return {ok:true};
+    };`);
+  for(let i=0;i<5;i++) await h.run('workflowTick()');
+  assert.equal(h.state.runState,'stopped');
+  assert.equal(h.state.profiles.alice.contacted,true);
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(calls)')),['PROFILE_READY','COLLECT_PROFILE','ENSURE_FOLLOWING','COLLECT_PROFILE','DRAFT','PREPARE_FROM_PROFILE','APPROVE_SEND']);
 });
