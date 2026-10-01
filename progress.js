@@ -22,6 +22,7 @@ async function readProfiles(){
     if(!key.startsWith(PROCESSED_PREFIX)||!isProcessed(record)) continue;
     const handle=profileKey(key.slice(PROCESSED_PREFIX.length));
     const existing=profiles[handle]||{};
+    // A confirmed send outranks later skip/review records to prevent repeat outreach.
     profiles[handle]=normalizeRecord({...existing,...record,
       ...(existing.processingStatus==='contacted'?{processingStatus:'contacted',contacted:true,contactedAt:existing.contactedAt||record.contactedAt}:{})},handle);
   }
@@ -32,6 +33,7 @@ async function persistProcessedProfile(record){
   const key=PROCESSED_PREFIX+profileKey(record.handle);
   const old=(await chrome.storage.local.get(key))[key];
   const merged=normalizeRecord({...old,...record},record.handle);
+  // Preserve the original send timestamp when later operations update this recipient.
   if(old?.processingStatus==='contacted') Object.assign(merged,{processingStatus:'contacted',contacted:true,contactedAt:old.contactedAt||record.contactedAt});
   await chrome.storage.local.set({[key]:merged});
 }
@@ -94,12 +96,14 @@ function statedUsLocation(value){
 function followerCount(value){
   const text=String(value??'').trim().replace(/\s+followers?$/i,'');
   const match=text.match(/^((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)([KMB])?$/i);
+  // Keep unreadable counts distinct from zero so eligibility cannot accept missing data.
   if(!match) return null;
   const count=Number(match[1].replaceAll(',',''))*({K:1e3,M:1e6,B:1e9}[match[2]?.toUpperCase()]||1);
   return Number.isFinite(count)?Math.round(count):null;
 }
 function audienceReview(settings,profile){
   const reject=reason=>({eligible:false,reason});
+  // Missing settings in older installs retain the default-on audience checks.
   if(settings.usaOnly!=='off' && !statedUsLocation(profile?.location)) return reject('USA-only review: location is missing, ambiguous, or outside the supported US location forms.');
   if(settings.followerReview!=='off'){
     const count=followerCount(profile?.followers);
