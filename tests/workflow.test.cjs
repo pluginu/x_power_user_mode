@@ -1255,7 +1255,7 @@ test('timeline highlights only listed authors and removes highlights when disabl
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','timeline.js'),'utf8'),h.ctx);
   await new Promise(setImmediate);
   assert.equal(h.run('matched'),true);
-  assert.equal(h.run('badge.textContent'),'SIN review list: @alice');
+  assert.equal(h.run('badge.textContent'),'X Power User Plugin review list: @alice');
   h.state.handles='bob';await h.run('highlightTimelineMatches()');
   assert.equal(h.run('matched'),false);
   assert.equal(h.run('badge'),null);

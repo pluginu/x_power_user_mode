@@ -1,19 +1,21 @@
-# X Power User Mode — SIN Outreach Assistant v1.9.20
+# X Power User Plugin v1.9.21
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
+The plugin folder is `x_power_user_plugin`, matching the display name **X Power User Plugin**. For ZIP downloads, rename the extracted folder to `x_power_user_plugin` before loading it in Chrome.
+
 ## Install in Chrome
 
-1. Download this repository using **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/pluginu/x_power_user_mode.git`.
+1. Download this repository using **Code → Download ZIP** on GitHub and extract it, or run `git clone https://github.com/pluginu/x_power_user_mode.git x_power_user_plugin`.
 2. Open `chrome://extensions` in Chrome and enable **Developer mode**.
-3. Click **Load unpacked** and select the extracted/cloned folder containing `manifest.json` (not its parent folder or the ZIP).
-4. Open `https://x.com`, sign in, and refresh the tab. Open **SIN Outreach Assistant** from Chrome’s extensions menu; pin it for easier access.
+3. Click **Load unpacked** and select the `x_power_user_plugin` folder containing `manifest.json` (not its parent folder or the ZIP).
+4. Open `https://x.com`, sign in, and refresh the tab. Open **X Power User Plugin** from Chrome’s extensions menu; pin it for easier access.
 5. Open the extension’s **Side Panel**, enter your OpenAI API key, project facts, and one X handle per line in **Profiles**. Draft generation requires an API key with API access and available billing/credits.
 6. Select **Existing DM workflow**. Leave **USA only** and **Check follower count** enabled. Set minimum/maximum followers and optionally **Must follow me**. The default minimum is 0 with no maximum; the follower count must still be readable.
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.20** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.21** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
 
 ## v1.9.20: profile loading and follow detection
 
@@ -114,7 +116,7 @@ The sections below describe earlier versions; v1.9.12 behavior above supersedes 
 - The panel shows its version and extension ID. **Test page connection** detects older content scripts and asks you to refresh X. **Export debug log** downloads UI/page diagnostics, workflow stage, timing, tab information, and errors without exporting the API-key setting. Page diagnostics use separate storage so UI logging cannot overwrite them.
 - Reload the extension in `chrome://extensions`, refresh X, reopen the side panel, and verify **v1.9.11** is shown. Keep X visible and the side panel open while the workflow runs.
 
-# SIN Outreach Assistant — DM readiness and automatic queue fix
+# X Power User Plugin — DM readiness and automatic queue fix
 
 - **Start** opens the side panel and runs **Collect + save profile → Generate tailored draft → Prepare DM**, waiting for each action to finish. Starting an unfinished profile clears stale drafts and runs the full sequence again. Keep the side panel open while the queue runs; reopening it resumes the saved workflow.
 - When X shows **@recipient has a closed inbox** with **Not Now / Use X Number**, the extension clicks **Not Now**, saves `dm_unavailable` with reason `closed_inbox`, and automatically processes the next record. The saved profile and draft remain available, with `alternativeOutreachNeeded: true` and the notice evidence included in CSV/JSON exports. This does not mark the person contacted.
@@ -131,11 +133,11 @@ The sections below describe earlier versions; v1.9.12 behavior above supersedes 
 
 ---
 
-# SIN Outreach Assistant v17
+# X Power User Plugin v17
 
 This build fixes direct-DM composer detection on X. Prepare DM now prefers the currently focused editable element (the cursor-ready message box), then falls back across visible contenteditable/textbox/textarea editors, including open shadow roots. It no longer requires X to expose a specific `dmComposerTextInput` selector.
 
-# SIN Outreach Assistant v15
+# X Power User Plugin v15
 
 This build fixes X Chat's three-panel **New chat** detection using X's exact current selector:
 
@@ -146,7 +148,7 @@ It also waits for the button through DOM mutations, then continues the saved Pre
 All v13 persistence, complete backup/import, profile history, settings, API key persistence, follow handling, and debug logging remain included.
 
 After loading/reloading the extension in `chrome://extensions`, refresh existing X tabs once so the new content script is injected.
-# SIN Outreach Assistant v13
+# X Power User Plugin v13
 
 This build consolidates the previous fixes into one stateful workflow.
 
@@ -175,7 +177,7 @@ This build consolidates the previous fixes into one stateful workflow.
 
 ### After renaming or moving the folder
 
-The plugin uses relative asset paths and does not require a particular root folder name. Chrome must still load the correct folder: use **Load unpacked** to select its new location if the existing registration points elsewhere. Follow the backup and restore steps above when replacing an existing registration. Keep only the intended SIN build enabled.
+The plugin uses relative asset paths and does not require a particular root folder name. Chrome must still load the correct folder: use **Load unpacked** to select its new location if the existing registration points elsewhere. Follow the backup and restore steps above when replacing an existing registration. Keep only the intended X Power User Plugin build enabled.
 
 Run local checks with `node --test tests/workflow.test.cjs` from the plugin folder, or pass the absolute path to that test file from another directory.
 

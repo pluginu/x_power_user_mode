@@ -15,9 +15,9 @@ async function highlightTimelineMatches(){
       article.toggleAttribute('data-sin-review-match',match);
       const old=article.querySelector('[data-sin-review-badge]');
       if(!match){old?.remove();continue}
-      if(old){old.textContent=`SIN review list: @${handle}`;continue}
+      if(old){old.textContent=`X Power User Plugin review list: @${handle}`;continue}
       const badge=document.createElement('div');badge.setAttribute('data-sin-review-badge','');
-      badge.textContent=`SIN review list: @${handle}`;
+      badge.textContent=`X Power User Plugin review list: @${handle}`;
       badge.style.cssText='padding:6px 12px;color:#9ad;font-size:13px;border:1px solid #9ad;border-radius:6px;pointer-events:none';
       article.prepend(badge);
     }

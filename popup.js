@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 let current = null;
 let timer = null;
-const BUILD = '1.9.20';
+const BUILD = '1.9.21';
 const PROFILE_LOAD_MS = 120000;
 const PREPARE_MS = 360000;
 let lastWorkflowLog = '';
@@ -666,18 +666,18 @@ function download(name,type,text){
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
-$('exportJson').onclick=async()=>{download(`sin-profiles-${new Date().toISOString().slice(0,10)}.json`,'application/json',JSON.stringify(Object.values(await db()),null,2))};
+$('exportJson').onclick=async()=>{download(`x-power-user-plugin-profiles-${new Date().toISOString().slice(0,10)}.json`,'application/json',JSON.stringify(Object.values(await db()),null,2))};
 $('exportCsv').onclick=async()=>{
   const rows=Object.values(await db());
   const cols=['handle','name','bio','location','following','followers','url','joined','isFollowing','followingStatus','followsYou','dmAvailable','dmStatus','dmReason','dmUnavailableAt','dmEvidence','alternativeOutreachNeeded','processingStatus','accountNotFoundAt','accountSuspendedAt','eligibilityReason','eligibilityCheckedAt','visited','visitedAt','collectedAt','followedByExtension','followedAt','contacted','contactedAt','draft','draftAt','preparedAt','workflowFailures','lastWorkflowError','lastUpdated'];
   const esc=v=>'"'+String(v??'').replaceAll('"','""')+'"';
-  download(`sin-profiles-${new Date().toISOString().slice(0,10)}.csv`,'text/csv;charset=utf-8',[cols.join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n'));
+  download(`x-power-user-plugin-profiles-${new Date().toISOString().slice(0,10)}.csv`,'text/csv;charset=utf-8',[cols.join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n'));
 };
 
 $('reset').onclick=async()=>{if(confirm('Reset collected profile progress and contact history? Settings, API key, and queue will be kept.')){const all=await chrome.storage.local.get(null);await chrome.storage.local.remove([...Object.keys(all).filter(k=>k.startsWith(PROCESSED_PREFIX)||k.startsWith(ENGAGEMENT_PREFIX)),'reviewHandle','workflowCollectedHandle','workflowDraftedHandle','profiles','workflowCurrent','currentDraft','profileDisplay','pendingDmPrepare','workflowStep','workflowHandle','workflowDue','workflowTabId','runState']);current=null;$('message').value='';$('profile').textContent='No profile collected yet.';await renderProgress();status('Progress reset. Settings, API key, and queue kept.')}};
 $('testPage').onclick=async()=>{const r=await tabMessage('PING');log('PING RESULT',r);if(r?.ok)alert('Connection OK\n'+r.url);else alertError('Page connection failed.',(r?.error||'Unknown error')+'\n\nReload the X tab after reloading the extension.')};
 $('clearLog').onclick=()=>{$('log').textContent='Log cleared.\n';$('pageLog').textContent='';chrome.storage.local.set({debugLog:$('log').textContent,contentDebugLog:''})};
-$('exportLog').onclick=async()=>{const st=await chrome.storage.local.get(['debugLog','contentDebugLog','runState','workflowStep','workflowHandle','workflowTabId','pendingDmPrepare']);const p=st.pendingDmPrepare;download('sin-diagnostics.json','application/json',JSON.stringify({build:BUILD,extensionId:chrome.runtime.id,exportedAt:new Date().toISOString(),...st,pendingDmPrepare:p?{handle:p.handle,stage:p.stage,tabId:p.tabId,startedAt:p.startedAt,updatedAt:p.updatedAt,error:p.error}:null},null,2).replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'))};
+$('exportLog').onclick=async()=>{const st=await chrome.storage.local.get(['debugLog','contentDebugLog','runState','workflowStep','workflowHandle','workflowTabId','pendingDmPrepare']);const p=st.pendingDmPrepare;download('x-power-user-plugin-diagnostics.json','application/json',JSON.stringify({build:BUILD,extensionId:chrome.runtime.id,exportedAt:new Date().toISOString(),...st,pendingDmPrepare:p?{handle:p.handle,stage:p.stage,tabId:p.tabId,startedAt:p.startedAt,updatedAt:p.updatedAt,error:p.error}:null},null,2).replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'))};
 $('autoSend').addEventListener('change',async()=>{await chrome.storage.local.set({autoSend:$('autoSend').checked});status($('autoSend').checked?'Automatic sending enabled. Running queues will send ready drafts.':'Automatic sending disabled. Ready drafts require Send & Next.');});
 chrome.storage.onChanged?.addListener((changes,area)=>{
   if(area==='local') for(const id of fields){
@@ -745,8 +745,9 @@ $('message').addEventListener('input',async()=>{
 $('exportBackup').onclick=async()=>{
   await store();
   const all=await chrome.storage.local.get(null);
+  // Keep the legacy format identifier so existing backups remain compatible.
   const payload={format:'sin-outreach-backup',version:2,exportedAt:new Date().toISOString(),containsSecrets:!!all.apiKey,data:all};
-  download(`sin-complete-backup-${new Date().toISOString().replace(/[:.]/g,'-')}.json`,'application/json',JSON.stringify(payload,null,2));
+  download(`x-power-user-plugin-backup-${new Date().toISOString().replace(/[:.]/g,'-')}.json`,'application/json',JSON.stringify(payload,null,2));
   status('Complete backup exported. It includes all stored data, including the API key if present. Keep it private.');
 };
 
@@ -754,13 +755,13 @@ $('importBackup').onclick=()=>$('backupFile').click();
 $('backupFile').addEventListener('change',async e=>{try{
   const f=e.target.files?.[0]; if(!f)return;
   const parsed=JSON.parse(await f.text());
-  if(!/^sin(?:69)?-outreach-backup$/.test(parsed?.format||'')||!parsed?.data) throw new Error('Not a SIN complete backup file.');
+  if(!/^sin(?:69)?-outreach-backup$/.test(parsed?.format||'')||!parsed?.data) throw new Error('Not a compatible X Power User Plugin backup file.');
   await chrome.storage.local.clear();
   await chrome.storage.local.set(parsed.data);
   current=null;
   await restore();
   status('Complete backup imported and UI restored, including API key/settings when present.');
-  alert('SIN complete backup imported successfully.');
+  alert('X Power User Plugin backup imported successfully.');
 }catch(err){alertError('Backup import failed.',err.message)}finally{e.target.value=''}});
 
 const uiReady=restore();

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SIN Outreach Assistant",
-  "version": "1.9.20",
-  "description": "SIN outreach assistant with persistent state, complete backup, side-panel UI, AI drafting, and direct profile-to-DM preparation.",
+  "name": "X Power User Plugin",
+  "version": "1.9.21",
+  "description": "X profile workflow plugin with persistent state, complete backup, side-panel UI, AI drafting, and direct profile-to-DM preparation.",
   "permissions": [
     "storage",
     "activeTab",
