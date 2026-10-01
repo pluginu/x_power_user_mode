@@ -1,5 +1,18 @@
 // Executed in the X tab. Successful events require a visible confirmation from X.
 let engagementBusy=false;
+// A reply composer is bound only after clicking Reply on the verified target post.
+// X can render that post in the dialog without a clickable status permalink.
+const replyDialogTargets=new WeakMap();
+function engagementPostId(value){
+  try{
+    const url=new URL(value,location.href);
+    if(!['x.com','www.x.com','twitter.com','www.twitter.com'].includes(url.hostname)) return null;
+    return url.pathname.match(/^\/[A-Za-z0-9_]+\/status\/(\d+)(?:\/|$)/)?.[1]||null;
+  }catch{return null}
+}
+function currentReplyDialog(){
+  return document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]')?.closest('[role="dialog"]')||null;
+}
 async function engagementGuard(job,replyDialog=null){
   if(!/^[A-Za-z0-9_]{1,15}$/.test(job.handle||'')) throw new Error('Invalid profile handle.');
   const s=await chrome.storage.local.get(null);
@@ -7,10 +20,13 @@ async function engagementGuard(job,replyDialog=null){
   if(s.runState!=='running'||!reviewMode(s)||s.engagementRunId!==job.runId||s.workflowTabId!==identity?.tabId||profileKey(s.reviewHandle)!==profileKey(job.handle)) throw new Error('Engagement queue paused or changed.');
   const onProfile=location.pathname.replace(/\/$/,'').toLowerCase()==='/'+profileKey(job.handle);
   if(replyDialog){
-    const samePost=[...replyDialog.querySelectorAll('a[href*="/status/"]')].some(link=>{
-      try{return new URL(link.href,location.href).origin==='https://x.com'&&new URL(link.href,location.href).pathname===new URL(job.post).pathname}catch{return false}
-    });
-    if(!replyDialog.isConnected||document.querySelector('[role="dialog"]')!==replyDialog||!samePost) throw new Error('The target reply dialog changed.');
+    const target=replyDialogTargets.get(replyDialog);
+    if(!replyDialog.isConnected||currentReplyDialog()!==replyDialog) throw new Error('The reply composer was closed or replaced. Close any open draft and resume.');
+    if(!target||target.runId!==job.runId||target.post!==job.post||target.handle!==profileKey(job.handle)) throw new Error('The reply composer is not bound to this queued post.');
+    // A missing permalink is normal. If X exposes post links, check their IDs,
+    // allowing tracking queries and media suffixes without relying on URL spelling.
+    const postIds=[...replyDialog.querySelectorAll('a[href*="/status/"]')].map(link=>engagementPostId(link.href)).filter(Boolean);
+    if(postIds.length&&!postIds.includes(engagementPostId(job.post))) throw new Error('The reply composer shows a different post. Close it and resume.');
   }
   if(!onProfile&&!(replyDialog&&/^\/compose\/(post|tweet)\/?$/.test(location.pathname))) throw new Error('The target profile is no longer open.');
   // X changes the URL to /compose/post while the bound reply dialog is open.
@@ -78,9 +94,13 @@ async function executeEngagement(job){
     if(document.querySelector('[role="dialog"]')) throw new Error('Close the existing X dialog first.');
     const reply=found.article.querySelector('[data-testid="reply"]');
     if(!reply) throw new Error('Reply button is unavailable.');
-    await engagementGuard(job);reply.click();
-    const dialog=await waitForElement(()=>document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]')?.closest('[role="dialog"]'),8000);
+    await engagementGuard(job);
+    const livePost=engagementPosts(job.handle).find(p=>p.post===job.post);
+    if(!reply.isConnected||livePost?.article.querySelector('[data-testid="reply"]')!==reply) throw new Error('Target post changed before opening Reply.');
+    reply.click();
+    const dialog=await waitForElement(currentReplyDialog,8000);
     if(!dialog) throw new Error('Reply composer did not open.');
+    replyDialogTargets.set(dialog,{runId:job.runId,post:job.post,handle:profileKey(job.handle)});
     await engagementGuard(job,dialog);
     const box=dialog.querySelector('[data-testid="tweetTextarea_0"]');
     await insertIntoComposer(box,job.text.trim());

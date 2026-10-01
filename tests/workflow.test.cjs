@@ -1696,6 +1696,43 @@ test('reply dialog for a different post cannot bypass the navigation guard',asyn
   const h=replyFixture();h.run("dialog.querySelectorAll=()=>[{href:'https://x.com/bob/status/999'}]");
   const result=await h.message({...likeJob,action:'comment',text:'Hello'});
   assert.equal(result.ok,false);
-  assert.match(result.error,/target reply dialog changed/);
+  assert.match(result.error,/reply composer shows a different post/);
   assert.equal(h.run('submitted'),0);
+});
+
+
+test('reply dialog without a status link stays bound to the post whose Reply was clicked',async()=>{
+  const h=replyFixture();h.run('dialog.querySelectorAll=()=>[]');
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.equal(h.run('submitted'),1);
+});
+test('reply guard uses the composer dialog instead of an outer dialog wrapper',async()=>{
+  const h=replyFixture();
+  h.run(`const originalQuery=document.querySelector;
+    document.querySelector=s=>opened&&s==='[role="dialog"]'?{}:originalQuery(s);`);
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+  assert.equal(h.run('submitted'),1);
+});
+test('reply permalink accepts media suffixes and tracking parameters',async()=>{
+  const h=replyFixture();h.run("dialog.querySelectorAll=()=>[{href:'https://x.com/Alice/status/123/photo/1?s=20'}]");
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,true,result.error);
+});
+test('a replaced reply dialog does not inherit the original target binding',async()=>{
+  const h=replyFixture();
+  h.run(`insertIntoComposer=async(b,text)=>{b.value=text;box.closest=()=>({...dialog})}`);
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/closed or replaced/);
+  assert.equal(h.run('submitted'),0);
+  assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
+});
+test('a detached Reply button cannot bind a new composer',async()=>{
+  const h=replyFixture();h.run('button.isConnected=false');
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/Target post changed/);
+  assert.equal(h.run('opened'),false);
 });
