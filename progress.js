@@ -50,19 +50,19 @@ async function restoreProcessedProfiles(){
   }
 }
 
-// Manual engagement is stored independently of collection/contact history.
+// Confirmed engagement is stored independently of collection/contact history.
 const ENGAGEMENT_PREFIX='engagement:';
 function reviewMode(settings){return ['follow_review','staged_review'].includes(settings.outreachMode)}
 function engagementEligibility(settings,events=[],now=Date.now()){
   // Recompute from surviving records so undoing the first interaction also resets the waiting period.
   const count=value=>Math.max(0,Math.floor(Number(value)||0));
-  const valid=events.filter(e=>Number.isFinite(e.at)&&e.at<=now);
+  const valid=events.filter(e=>e.confirmed===true&&Number.isFinite(e.at)&&e.at<=now);
   const likes=new Set(valid.filter(e=>e.type==='like').map(e=>e.post)).size;
   const comments=new Set(valid.filter(e=>e.type==='comment').map(e=>e.post)).size;
   const followed=valid.some(e=>e.type==='follow');
   const first=valid.length?Math.min(...valid.map(e=>e.at)):null;
-  const eligibleAt=first===null?null:first+Math.max(0,Number(settings.engagementDays)||0)*86400000;
-  const eligible=followed&&likes>=count(settings.requiredLikes)&&comments>=count(settings.requiredComments)&&eligibleAt!==null&&now>=eligibleAt;
+  const eligibleAt=first===null?null:first+Math.max(0,Number(settings.engagementDays??3)||0)*86400000;
+  const eligible=followed&&likes>=count(settings.requiredLikes??2)&&comments>=count(settings.requiredComments??1)&&eligibleAt!==null&&now>=eligibleAt;
   return {likes,comments,followed,eligibleAt,eligible};
 }
 async function assertReviewDmAllowed(handle,automatic=false){

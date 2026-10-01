@@ -1,4 +1,4 @@
-# X Power User Plugin v1.9.22
+# X Power User Plugin v1.9.23
 
 A Chrome extension for reviewing an X profile queue, following eligible profiles, and preparing personalized DMs. After setup, **Start** runs profile collection → location and follower checks → follow when needed → draft → prepare DM → send (if automatic sending is enabled) → next profile. Settings save as you edit; there is no separate Save or per-profile approval click in automatic mode. Keep the side panel and X tab open. Login prompts, closed inboxes, and page errors can still require attention.
 
@@ -15,7 +15,15 @@ The plugin folder is `x_power_user_plugin`, matching the display name **X Power 
 7. Enable **Automatically send messages** if you want DMs sent after the configured checks without another approval click. It is off by default. Configure the pause between profiles and message options.
 8. Click **Start** once. Keep the side panel open. **Pause** or **Stop** suspends subsequent automatic actions; a send already clicked cannot be recalled.
 
-For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.22** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+For updates, replace the files in the same folder, click **Reload** in `chrome://extensions`, and refresh existing X tabs. Confirm **v1.9.23** appears in the panel. When moving from the original plugin folder, use **Export Backup** there and **Import Backup** here to transfer settings and progress. Backups include the saved API key; keep them private. Browser storage is separate from this Git repository.
+
+## v1.9.23: automatic engagement
+
+Choose **Automatic follow · no DMs** to follow eligible profiles, or **Automatic engagement · staged DMs** to also like loaded original posts and publish brief AI-generated replies. Click **Start** once and keep the side panel and X tab open. The queue checks your location/follower filters, performs actions on X, and advances with the configured delay. Comments require an OpenAI API key. Pause stops subsequent actions.
+
+Only visibly confirmed actions count toward staged eligibility; old manual records remain in backups but do not count. Following requires X's Following state, likes require its Unlike state, and comments require a new posted-link receipt. An unconfirmed comment pauses the queue and leaves a persistent submission marker to prevent duplicate replies. Inspect X before resolving that marker. If too few original posts are loaded, confirmed progress is retained and the queue continues; Start retries incomplete profiles. No scrolling or continuous timeline engagement is performed. DMs retain their staged waiting period and approval requirement.
+
+Earlier release notes below describe historical behavior.
 
 ## v1.9.22: explain manual review waits
 

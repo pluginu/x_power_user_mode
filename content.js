@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.22';
+const CONTENT_BUILD = '1.9.23';
 function txt(sel){return document.querySelector(sel)?.innerText?.trim()||''}
 function countFrom(suffix){const a=[...document.querySelectorAll(`a[href$="/${suffix}"]`)][0];return a?.innerText?.trim()||''}
 function allText(el){return ((el?.getAttribute?.('aria-label')||'')+' '+(el?.getAttribute?.('title')||'')+' '+(el?.innerText||'')).trim()}
@@ -390,9 +390,9 @@ async function updatePendingDm(patch,job){
   if(patch.stage && patch.stage!==cur.stage) await appendPersistentLog('DM STAGE',{handle:cur.handle,from:cur.stage,to:patch.stage,url:location.href,error:patch.error});
 }
 
-async function ensureFollowingOnPage(handle){
+async function ensureFollowingOnPage(handle,engagementJob){
   const settings=await chrome.storage.local.get(null);
-  if(reviewMode(settings)) throw new Error("Follow manually on X in review mode.");
+  if(reviewMode(settings)){if(!engagementJob) throw new Error("Start the engagement queue to follow in this mode.");await engagementGuard(engagementJob);}
   // Sample the live recipient after the storage await, before the single Follow click.
   const profile=collectProfile();
   if(normHandle(profile.handle)!==normHandle(handle)) throw new Error('Profile changed before audience review.');
@@ -409,7 +409,7 @@ async function ensureFollowingOnPage(handle){
     if(!rel) return {ok:false,error:'The profile Follow control did not appear. Check the X profile and retry.',debug:domDebug()};
     // Recheck current settings and profile after waiting for late controls.
     const liveSettings=await chrome.storage.local.get(null);
-    if(reviewMode(liveSettings)) throw new Error('Follow manually on X in review mode.');
+    if(reviewMode(liveSettings)){if(!engagementJob) throw new Error('Start the engagement queue to follow in this mode.');await engagementGuard(engagementJob);}
     const liveProfile=collectProfile();
     if(normHandle(liveProfile.handle)!==normHandle(handle)) throw new Error('Profile changed while waiting for Follow.');
     const liveReview=audienceReview(liveSettings,liveProfile);
@@ -420,10 +420,12 @@ async function ensureFollowingOnPage(handle){
   if(rel.followingStatus==='yes') return {ok:true,alreadyFollowing:true,followedNow:false,relationship:rel,debug:domDebug()};
   const btn=findFollowButton();
   if(!btn) return {ok:false,error:'X reports not-following, but the Follow button could not be located.',relationship:rel,debug:domDebug()};
+  if(engagementJob) await engagementGuard(engagementJob);
   robustClick(btn);
   const end=Date.now()+9000;
   while(Date.now()<end){
     await sleep(300);
+    if(engagementJob && normHandle(collectProfile().handle)!==normHandle(handle)) throw new Error('Profile changed before follow confirmation.');
     rel=relationship();
     if(rel.followingStatus==='yes') return {ok:true,alreadyFollowing:false,followedNow:true,relationship:rel,debug:domDebug()};
   }

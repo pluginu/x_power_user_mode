@@ -13,7 +13,7 @@ function harness(file,state={}){
     document:{getElementById:element,body:{classList:{contains:()=>true}},querySelectorAll:()=>[],querySelector:()=>null},
     location:{href:'https://x.com/i/chat/123',pathname:'/i/chat/123'},
     window:{addEventListener(){}},alert(){},setTimeout(){},clearTimeout(){},setInterval(){},
-    chrome:{storage:{local:{async get(keys){return {...state}},async set(p){Object.assign(state,p)},async remove(keys){keys.forEach(k=>delete state[k])}}},
+    chrome:{storage:{local:{async get(keys){return {...state}},async set(p){Object.assign(state,p)},async remove(keys){(Array.isArray(keys)?keys:[keys]).forEach(k=>delete state[k])}}},
       runtime:{onMessage:{addListener(fn){listener=fn}},sendMessage:async()=>({tabId:1})},
       tabs:{get:async()=>({id:1,status:'complete',url:'https://x.com/alice'}),query:async()=>[{id:1}],update:async()=>{} }}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','progress.js'),'utf8'),ctx);
@@ -1172,9 +1172,9 @@ test('invalid reference uploads preserve the previous reference',async()=>{
 test('staged eligibility requires distinct posts, a follow, and elapsed time',()=>{
   const h=harness('popup.js');
   h.run(`const rules={requiredLikes:2,requiredComments:1,engagementDays:3};
-    const events=[{type:'like',post:'one',at:1000},{type:'like',post:'one',at:2000},{type:'comment',post:'one',at:3000},{type:'follow',post:'',at:4000}];`);
+    const events=[{confirmed:true,type:'like',post:'one',at:1000},{confirmed:true,type:'like',post:'one',at:2000},{confirmed:true,type:'comment',post:'one',at:3000},{confirmed:true,type:'follow',post:'',at:4000}];`);
   assert.equal(h.run('engagementEligibility(rules,events,400000000).eligible'),false);
-  h.run("events.push({type:'like',post:'two',at:5000})");
+  h.run("events.push({confirmed:true,type:'like',post:'two',at:5000})");
   assert.equal(h.run('engagementEligibility(rules,events,10000).eligible'),false);
   assert.equal(h.run('engagementEligibility(rules,events,1000+3*86400000).eligible'),true);
   assert.equal(h.run("engagementEligibility(rules,events.filter(e=>e.type!=='follow'),400000000).eligible"),false);
@@ -1185,7 +1185,7 @@ test('review policies block every DM in no-DM mode and automatic staged sends',a
   await assert.rejects(h.run("assertReviewDmAllowed('alice')"),/No-DM/);
   Object.assign(h.state,{outreachMode:'staged_review',requiredLikes:0,requiredComments:0,engagementDays:0});
   await assert.rejects(h.run("assertReviewDmAllowed('alice')"),/requirements/);
-  h.state['engagement:alice']=[{type:'follow',post:'',at:Date.now()-1000}];
+  h.state['engagement:alice']=[{confirmed:true,type:'follow',post:'',at:Date.now()-1000}];
   await h.run("assertReviewDmAllowed('alice')");
   await assert.rejects(h.run("assertReviewDmAllowed('alice',true)"),/manual approval/);
 });
@@ -1205,7 +1205,7 @@ test('no-DM mode blocks draft requests and stops existing automatic workflow',as
 test('content script blocks follow and DM approval in review mode',async()=>{
   const h=harness('content.js',{outreachMode:'follow_review'});
   h.run('domDebug=()=>({})');
-  assert.match((await h.message({type:'ENSURE_FOLLOWING'})).error,/manually/);
+  assert.match((await h.message({type:'ENSURE_FOLLOWING'})).error,/engagement queue/);
   assert.match((await h.message({type:'APPROVE_SEND',expectedHandle:'alice'})).error,/No-DM/);
 });
 
@@ -1216,61 +1216,107 @@ function loadReview(h){
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','review.js'),'utf8'),h.ctx);
 }
 
-test('review queue skips recorded follows and pauses legacy automation before navigation',async()=>{
-  const h=harness('popup.js',{outreachMode:'follow_review',handles:'alice\nbob',autoSend:true,'engagement:alice':[{type:'follow',post:'',at:1000}]});
+test('automatic queue follows and likes then advances without per-profile clicks',async()=>{
+  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice\nbob',requiredLikes:1,requiredComments:0});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
-  h.run(`let visited='';chrome.tabs.update=async(id,options)=>{visited=options.url};`);
+  h.run(`let visits=[],actions=[],now=Date.now();Date=class extends Date {static now(){return now}};
+    setTimeout=fn=>{now+=2000;fn();return 0};
+    chrome.tabs.query=async()=>[{id:1,url:'https://x.com/home'}];
+    chrome.tabs.update=async(id,o)=>visits.push(o.url);
+    tabMessage=async(type,msg)=>{
+      if(type==='PROFILE_READY') return {ok:true};
+      if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:msg.handle}};
+      actions.push(msg.action+':'+msg.handle);
+      if(msg.action==='posts')return {ok:true,posts:[{post:'https://x.com/'+msg.handle+'/status/123',text:'A post'}]};
+      const key=ENGAGEMENT_PREFIX+msg.handle,s=await chrome.storage.local.get(key);
+      await chrome.storage.local.set({[key]:[...(s[key]||[]),{type:msg.action,post:msg.post||'',confirmed:true,at:Date.now()}]});
+      return {ok:true};
+    };`);
   await h.element('start').onclick();
-  assert.equal(h.run('visited'),'https://x.com/bob');
+  for(let i=0;i<10;i++) await new Promise(setImmediate);
+  assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice','https://x.com/bob']));
+  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['follow:alice','posts:alice','like:alice','follow:bob','posts:bob','like:bob']));
   assert.equal(h.state.runState,'paused');
-  assert.equal(h.state.autoSend,false);
-  assert.equal(h.state.pendingDmPrepare,null);
-  assert.equal(h.element('reviewHandle').value,'bob');
+  assert.equal(h.state['engagement:bob'].length,2);
 });
 
-test('review started from toolbar keeps instructions in the side panel without engagement actions',async()=>{
+test('toolbar Start hands an automatic job to the side panel',async()=>{
   const h=harness('popup.js',{outreachMode:'follow_review',handles:'alice'});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
-  h.run(`document.body.classList.contains=()=>false;
-    let actions=[];
-    chrome.tabs.query=async()=>[{id:1,windowId:7}];
-    chrome.sidePanel={open:async options=>actions.push('panel:'+options.windowId)};
-    chrome.tabs.update=async(id,options)=>actions.push(options.url);
-    chrome.tabs.sendMessage=()=>{throw new Error('Manual review must not trigger engagement')};`);
+  h.run(`document.body.classList.contains=()=>false;let actions=[];
+    chrome.tabs.query=async()=>[{id:1,windowId:7,url:'https://x.com/home'}];
+    chrome.sidePanel={open:async options=>actions.push('panel:'+options.windowId)};`);
   await h.element('start').onclick();
-  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['panel:7','https://x.com/alice']));
-  assert.equal(h.state.runState,'paused');
-  assert.match(h.element('status').textContent,/Waiting for manual review/);
-  assert.match(h.element('workflowHelp').textContent,/@alice/);
-  assert.equal(h.element('start').textContent,'Open next for review');
+  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['panel:7']));
+  assert.equal(h.state.runState,'running');
+  assert.ok(h.state.engagementRunId);
+  assert.equal(h.state.autoSend,false);
 });
 
 test('workflow explanation survives reopening and changes with the selected mode',async()=>{
   const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice',reviewHandle:'alice'});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
-  assert.match(h.element('workflowHelp').textContent,/Manual review.*@alice/);
-  assert.match(h.element('workflowHelp').textContent,/waits for you/);
+  assert.match(h.element('workflowHelp').textContent,/runs the profile queue automatically/);
   h.element('outreachMode').value='standard';
   await h.element('outreachMode').listeners.change();
   assert.equal(h.element('start').textContent,'Start');
   assert.match(h.element('workflowHelp').textContent,/each prepared DM waits for Send & Next/);
 });
 
-test('manual records validate author, deduplicate post URLs, and support undo',async()=>{
-  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice'});
+test('legacy manual records never count as confirmed actions or DM eligibility',async()=>{
+  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice',reviewHandle:'alice',requiredLikes:0,requiredComments:0,engagementDays:0,
+    'engagement:alice':[{type:'follow',post:'',at:1000}]});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
-  h.element('reviewHandle').value='alice';
-  h.element('engagementPost').value='https://x.com/bob/status/123';
-  await h.element('recordLike').onclick();
+  assert.equal(h.run("engagementComplete(chromeState,'alice')".replace('chromeState',JSON.stringify(h.state))),false);
+  assert.match(h.element('engagementStatus').textContent,/1 old manual records excluded/);
+  await assert.rejects(h.run("assertReviewDmAllowed('alice')"),/requirements/);
+});
+
+function loadEngagement(h){
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'..','engagement.js'),'utf8'),h.ctx);
+}
+function engagementFixture(){
+  const h=harness('content.js',{outreachMode:'staged_review',runState:'running',engagementRunId:'run',workflowTabId:1,reviewHandle:'alice'});
+  loadEngagement(h);
+  h.run(`location.pathname='/alice';collectProfile=()=>({handle:'alice'});
+    let liked=false,clicks=0;const button={isConnected:true,click(){clicks++;liked=true}};
+    const article={querySelector:s=>s==='[data-testid="unlike"]'?(liked?{}:null):button};
+    engagementPosts=()=>[{post:'https://x.com/alice/status/123',text:'Hello',article}];
+    waitForElement=async fn=>fn();`);
+  return h;
+}
+const likeJob={type:'ENGAGEMENT',runId:'run',handle:'alice',action:'like',post:'https://x.com/alice/status/123'};
+test('like clicks X once, verifies Unlike, and deduplicates confirmed records',async()=>{
+  const h=engagementFixture();
+  assert.equal((await h.message(likeJob)).ok,true);
+  assert.equal((await h.message(likeJob)).ok,true);
+  assert.equal(h.run('clicks'),1);
+  assert.equal(h.state['engagement:alice'].length,1);
+  assert.equal(h.state['engagement:alice'][0].confirmed,true);
+});
+test('an unconfirmed like does not create a completion event',async()=>{
+  const h=engagementFixture();h.run('button.click=()=>{clicks++}');
+  const result=await h.message(likeJob);
+  assert.equal(result.ok,false);assert.match(result.error,/did not confirm/);
   assert.equal(h.state['engagement:alice'],undefined);
-  h.element('engagementPost').value='https://x.com/alice/status/123?s=20';
-  await h.element('recordLike').onclick();
-  await h.element('recordLike').onclick();
-  assert.equal(h.state['engagement:alice'].length,1);
-  await h.element('recordComment').onclick();
-  assert.equal(h.state['engagement:alice'].length,2);
-  await h.element('undoEngagement').onclick();
-  assert.equal(h.state['engagement:alice'].length,1);
+});
+for(const change of [{runState:'paused'},{engagementRunId:'stale'},{workflowTabId:2},{reviewHandle:'bob'}])test('engagement guard prevents stale or paused clicks '+JSON.stringify(change),async()=>{
+  const h=engagementFixture();Object.assign(h.state,change);
+  assert.equal((await h.message(likeJob)).ok,false);
+  assert.equal(h.run('clicks'),0);
+});
+test('actual follow is verified before writing its event',async()=>{
+  const h=engagementFixture();h.run(`relationship=()=>({followingStatus:clicks?'yes':'no'});
+    findFollowButton=()=>button;robustClick=b=>b.click();sleep=async()=>{};domDebug=()=>({});`);
+  assert.equal((await h.message({...likeJob,action:'follow'})).ok,true);
+  assert.equal(h.run('clicks'),1);
+  assert.equal(h.state['engagement:alice'][0].type,'follow');
+});
+test('unconfirmed comment markers prevent repeat submission',async()=>{
+  const h=engagementFixture();h.state['pendingComment:'+likeJob.post]={text:'Hello'};
+  const result=await h.message({...likeJob,action:'comment',text:'Hello'});
+  assert.equal(result.ok,false);assert.match(result.error,/not be submitted twice/);
+  assert.equal(h.run('clicks'),0);
 });
 
 test('timeline highlights only listed authors and removes highlights when disabled',async()=>{
@@ -1456,4 +1502,40 @@ test('unknown follow state is checked before drafting and failure blocks generat
   assert.equal(await h.element('draft').onclick(),undefined);
   assert.equal(h.run('checked'),true);
   assert.match(h.element('status').textContent,/Follow control missing/);
+});
+
+test('comment publishes once and counts only after X returns a new post receipt',async()=>{
+  const h=engagementFixture();
+  h.run(`const box={value:''};let opened=false,submitted=false;
+    const submit={isConnected:true,disabled:false,getAttribute:()=>null,click(){submitted=true;clicks++}};
+    const dialog={querySelector:s=>s==='[data-testid="tweetTextarea_0"]'?box:submit};
+    box.closest=()=>dialog;
+    document.querySelector=s=>s==='[role="dialog"]'?null:opened?box:null;
+    document.querySelectorAll=()=>submitted?[{href:'https://x.com/me/status/999'}]:[];
+    article.querySelector=()=>({click(){opened=true}});
+    insertIntoComposer=(b,text)=>{b.value=text};sleep=async()=>{};`);
+  const result=await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
+  assert.equal(result.ok,true);
+  assert.equal(h.run('clicks'),1);
+  assert.equal(h.state['engagement:alice'][0].type,'comment');
+  assert.equal(h.state['pendingComment:'+likeJob.post],undefined);
+  await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
+  assert.equal(h.run('clicks'),1);
+});
+
+test('comment without a receipt preserves its marker and does not count',async()=>{
+  const h=engagementFixture();
+  h.run(`const box={value:''};let opened=false;
+    const submit={isConnected:true,disabled:false,getAttribute:()=>null,click(){clicks++}};
+    const dialog={querySelector:s=>s==='[data-testid="tweetTextarea_0"]'?box:submit};box.closest=()=>dialog;
+    document.querySelector=s=>s==='[role="dialog"]'?null:opened?box:null;
+    article.querySelector=()=>({click(){opened=true}});
+    insertIntoComposer=(b,text)=>{b.value=text};sleep=async()=>{};`);
+  const result=await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
+  assert.equal(result.ok,false);
+  assert.match(result.error,/no automatic retry/);
+  assert.ok(h.state['pendingComment:'+likeJob.post]);
+  assert.equal(h.state['engagement:alice'],undefined);
+  await h.message({...likeJob,action:'comment',text:'Interesting observation.'});
+  assert.equal(h.run('clicks'),1);
 });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X Power User Plugin",
-  "version": "1.9.22",
+  "version": "1.9.23",
   "description": "X profile workflow plugin with persistent state, complete backup, side-panel UI, AI drafting, and direct profile-to-DM preparation.",
   "permissions": [
     "storage",
@@ -24,6 +24,7 @@
       "js": [
         "progress.js",
         "content.js",
+        "engagement.js",
         "timeline.js"
       ],
       "run_at": "document_idle"

@@ -1,14 +1,12 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="styles.css"><title>X Power User Plugin Side Panel</title></head><body class="sidepanel"><div class="wrap"><h1>X Power User Plugin</h1><p id="build" class="sub">v1.9.22</p><p id="workflowHelp" class="sub" role="status" aria-live="polite">Loading workflow settings…</p>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="styles.css"><title>X Power User Plugin Side Panel</title></head><body class="sidepanel"><div class="wrap"><h1>X Power User Plugin</h1><p id="build" class="sub">v1.9.23</p><p id="workflowHelp" class="sub" role="status" aria-live="polite">Loading workflow settings…</p>
 <label>OpenAI API key <input id="apiKey" type="password" placeholder="sk-..."></label><label>Market cap / project context <input id="marketCap" placeholder="$123K market cap (current context only)"></label><label>Project facts <textarea id="projectFacts" rows="4" placeholder="SIN community purpose, links, factual claims only."></textarea></label>
 <fieldset class="draft-options"><legend>Outreach workflow</legend>
-<label>Mode<select id="outreachMode"><option value="standard">Existing DM workflow</option><option value="follow_review">Follow review · no DMs</option><option value="staged_review">Staged outreach · manual approval</option></select></label>
-<p class="sub">Review modes never like, comment, or follow for you. Open a profile or a matched timeline post, engage on X, then record what you completed below. Switching modes pauses the queue.</p>
+<label>Mode<select id="outreachMode"><option value="standard">Existing DM workflow</option><option value="follow_review">Automatic follow · no DMs</option><option value="staged_review">Automatic engagement · staged DMs</option></select></label>
+<p class="sub">Start once to run the queue automatically. Follow mode follows eligible profiles. Staged mode also likes posts and publishes AI-generated replies relevant to each post. Switching modes pauses the queue.</p>
 <div class="row"><label>Likes before DM<input id="requiredLikes" type="number" min="0" max="100" value="2"></label><label>Comments before DM<input id="requiredComments" type="number" min="0" max="100" value="1"></label><label>Wait (days)<input id="engagementDays" type="number" min="0" max="365" step="0.25" value="3"></label></div>
-<p class="sub">The wait starts at your first recorded interaction. A recorded follow is also required. Counts use distinct posts. Eligibility allows manual drafting and sending; it never triggers a DM.</p>
+<p class="sub">The wait starts at the first confirmed action. A confirmed follow is required. Likes and comments count distinct posts. Staged DMs require approval after the waiting period.</p>
 <label>Timeline matches<select id="timelineMonitoring"><option value="off">Off</option><option value="on">Highlight matching authors while I browse</option></select></label>
-<label>Review handle<input id="reviewHandle" placeholder="@handle from your list"></label>
-<label>Post URL (required for likes/comments)<input id="engagementPost" placeholder="https://x.com/handle/status/123"></label>
-<div class="buttons"><button id="reviewNext">Open next for review</button><button id="recordLike">Record like</button><button id="recordComment">Record comment</button><button id="recordFollow">Record follow</button><button id="undoEngagement">Undo last record</button></div>
+<input id="reviewHandle" type="hidden"><div class="buttons"><button id="reviewNext">Start automatic engagement</button></div>
 <p id="engagementStatus" class="sub"></p><div id="reviewQueue"></div>
 </fieldset>
 <fieldset class="draft-options"><legend>Profile and follower review</legend>
@@ -17,7 +15,7 @@
 <label>Follower review<select id="followerReview"><option value="on" selected>Check follower count</option><option value="off">Off</option></select></label>
 <div class="row"><label>Minimum followers<input id="minFollowers" type="number" min="0" step="1" value="0"></label><label>Maximum followers<input id="maxFollowers" type="number" min="0" step="1" placeholder="No maximum"></label></div>
 <label>Must follow me<select id="requireFollowBack"><option value="off">No</option><option value="on">Yes</option></select></label>
-<p class="sub">Start checks each profile before following or drafting. Failed checks are saved as skipped and the queue continues. Enable Automatically send messages in Existing DM workflow to send after these checks without another approval click. Review modes keep their manual approval rules.</p>
+<p class="sub">Start checks each profile before following or drafting. Failed checks are saved as skipped and the queue continues. Enable Automatically send messages in Existing DM workflow to send after these checks without another approval click. Staged DMs keep their approval requirement.</p>
 </fieldset>
 <fieldset class="draft-options"><legend>Message options</legend>
 <label>Message length<select id="messageLength"><option value="short">Short · 30–45 words</option><option value="usual" selected>Usual · 60–90 words</option><option value="long">Extra long · 150–220 words</option></select></label>
