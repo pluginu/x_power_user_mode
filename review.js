@@ -6,13 +6,18 @@ async function openReviewProfile(handle){
   if(!parseHandles(s.handles).some(h=>profileKey(h)===handle)) throw new Error('Choose a handle from your Profiles list.');
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
   if(!tab?.id) throw new Error('Open an X tab first.');
+  // Keep manual instructions visible when navigation dismisses the toolbar popup.
+  if(!document.body.classList.contains('sidepanel')){
+    if(!chrome.sidePanel?.open) throw new Error('Open the extension in the side panel before reviewing profiles.');
+    await chrome.sidePanel.open({windowId:tab.windowId});
+  }
   // Clear the previous automated job before navigation so manual review cannot resume a stale draft.
   await chrome.storage.local.set({runState:'paused',autoSend:false,pendingDmPrepare:null,workflowStep:null,
     workflowCurrent:null,currentDraft:'',reviewHandle:handle,workflowTabId:tab.id});
   current=null;$('message').value='';$('profile').textContent='Open profile for manual review.';
   $('reviewHandle').value=handle;
   await chrome.tabs.update(tab.id,{url:'https://x.com/'+encodeURIComponent(handle)});
-  status(`Review @${handle} on X. Record only interactions you complete yourself.`);
+  status(`Waiting for manual review of @${handle}. No follow, like, or comment was performed by the extension. Engage on X, record completed interactions, then click Open next for review.`);
   await renderReview();
 }
 async function nextReview(){
@@ -45,6 +50,12 @@ async function recordEngagement(type){
 }
 async function renderReview(){
   const s=await reviewSettings();
+  const manual=reviewMode(s);
+  $('start').textContent=manual?'Open next for review':'Start';
+  $('next').textContent=manual?'Open next for review':'Open next';
+  $('workflowHelp').textContent=manual
+    ? `Manual review${s.reviewHandle?' · @'+profileKey(s.reviewHandle):''}: opens one profile and waits for you. Follow, like, and comment on X yourself; record completed actions, then choose Open next for review. No automatic likes or comments are implemented.`
+    : 'Start checks profiles, follows eligible accounts when needed, drafts and prepares DMs. Keep the side panel open. With automatic sending off, each prepared DM waits for Send & Next. This workflow does not like or comment on posts.';
   const selected=profileKey($('reviewHandle').value||s.reviewHandle);
   const summary=(h)=>{
     const r=engagementEligibility(s,s[ENGAGEMENT_PREFIX+h]||[]);
@@ -83,7 +94,7 @@ for(const id of ['start','next']){
   $(id).onclick=reviewAction(async()=>{await store();if(reviewMode(await reviewSettings()))await nextReview();else await original()});
 }
 chrome.storage.onChanged?.addListener((changes,area)=>{
-  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||['outreachMode','handles','requiredLikes','requiredComments','engagementDays'].includes(k))) void renderReview();
+  if(area==='local'&&Object.keys(changes).some(k=>k.startsWith(ENGAGEMENT_PREFIX)||['outreachMode','reviewHandle','handles','requiredLikes','requiredComments','engagementDays'].includes(k))) void renderReview();
 });
 uiReady.then(async()=>{$('reviewHandle').value=(await reviewSettings()).reviewHandle||'';await renderReview()}).catch(e=>status(e.message));
 setInterval(()=>void renderReview().catch(()=>{}),60000);

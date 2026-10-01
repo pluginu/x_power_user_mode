@@ -1228,6 +1228,34 @@ test('review queue skips recorded follows and pauses legacy automation before na
   assert.equal(h.element('reviewHandle').value,'bob');
 });
 
+test('review started from toolbar keeps instructions in the side panel without engagement actions',async()=>{
+  const h=harness('popup.js',{outreachMode:'follow_review',handles:'alice'});
+  await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
+  h.run(`document.body.classList.contains=()=>false;
+    let actions=[];
+    chrome.tabs.query=async()=>[{id:1,windowId:7}];
+    chrome.sidePanel={open:async options=>actions.push('panel:'+options.windowId)};
+    chrome.tabs.update=async(id,options)=>actions.push(options.url);
+    chrome.tabs.sendMessage=()=>{throw new Error('Manual review must not trigger engagement')};`);
+  await h.element('start').onclick();
+  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['panel:7','https://x.com/alice']));
+  assert.equal(h.state.runState,'paused');
+  assert.match(h.element('status').textContent,/Waiting for manual review/);
+  assert.match(h.element('workflowHelp').textContent,/@alice/);
+  assert.equal(h.element('start').textContent,'Open next for review');
+});
+
+test('workflow explanation survives reopening and changes with the selected mode',async()=>{
+  const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice',reviewHandle:'alice'});
+  await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
+  assert.match(h.element('workflowHelp').textContent,/Manual review.*@alice/);
+  assert.match(h.element('workflowHelp').textContent,/waits for you/);
+  h.element('outreachMode').value='standard';
+  await h.element('outreachMode').listeners.change();
+  assert.equal(h.element('start').textContent,'Start');
+  assert.match(h.element('workflowHelp').textContent,/each prepared DM waits for Send & Next/);
+});
+
 test('manual records validate author, deduplicate post URLs, and support undo',async()=>{
   const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice'});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);

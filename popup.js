@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 let current = null;
 let timer = null;
-const BUILD = '1.9.21';
+const BUILD = '1.9.22';
 const PROFILE_LOAD_MS = 120000;
 const PREPARE_MS = 360000;
 let lastWorkflowLog = '';
@@ -677,7 +677,7 @@ $('exportCsv').onclick=async()=>{
 $('reset').onclick=async()=>{if(confirm('Reset collected profile progress and contact history? Settings, API key, and queue will be kept.')){const all=await chrome.storage.local.get(null);await chrome.storage.local.remove([...Object.keys(all).filter(k=>k.startsWith(PROCESSED_PREFIX)||k.startsWith(ENGAGEMENT_PREFIX)),'reviewHandle','workflowCollectedHandle','workflowDraftedHandle','profiles','workflowCurrent','currentDraft','profileDisplay','pendingDmPrepare','workflowStep','workflowHandle','workflowDue','workflowTabId','runState']);current=null;$('message').value='';$('profile').textContent='No profile collected yet.';await renderProgress();status('Progress reset. Settings, API key, and queue kept.')}};
 $('testPage').onclick=async()=>{const r=await tabMessage('PING');log('PING RESULT',r);if(r?.ok)alert('Connection OK\n'+r.url);else alertError('Page connection failed.',(r?.error||'Unknown error')+'\n\nReload the X tab after reloading the extension.')};
 $('clearLog').onclick=()=>{$('log').textContent='Log cleared.\n';$('pageLog').textContent='';chrome.storage.local.set({debugLog:$('log').textContent,contentDebugLog:''})};
-$('exportLog').onclick=async()=>{const st=await chrome.storage.local.get(['debugLog','contentDebugLog','runState','workflowStep','workflowHandle','workflowTabId','pendingDmPrepare']);const p=st.pendingDmPrepare;download('x-power-user-plugin-diagnostics.json','application/json',JSON.stringify({build:BUILD,extensionId:chrome.runtime.id,exportedAt:new Date().toISOString(),...st,pendingDmPrepare:p?{handle:p.handle,stage:p.stage,tabId:p.tabId,startedAt:p.startedAt,updatedAt:p.updatedAt,error:p.error}:null},null,2).replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'))};
+$('exportLog').onclick=async()=>{const st=await chrome.storage.local.get(['debugLog','contentDebugLog','runState','workflowStep','workflowHandle','workflowTabId','workflowDue','pendingDmPrepare','outreachMode','reviewHandle','autoSend']);const p=st.pendingDmPrepare;download('x-power-user-plugin-diagnostics.json','application/json',JSON.stringify({build:BUILD,extensionId:chrome.runtime.id,exportedAt:new Date().toISOString(),...st,pendingDmPrepare:p?{handle:p.handle,stage:p.stage,tabId:p.tabId,startedAt:p.startedAt,updatedAt:p.updatedAt,error:p.error}:null},null,2).replace(/sk-[A-Za-z0-9_-]+/g,'[REDACTED]'))};
 $('autoSend').addEventListener('change',async()=>{await chrome.storage.local.set({autoSend:$('autoSend').checked});status($('autoSend').checked?'Automatic sending enabled. Running queues will send ready drafts.':'Automatic sending disabled. Ready drafts require Send & Next.');});
 chrome.storage.onChanged?.addListener((changes,area)=>{
   if(area==='local') for(const id of fields){
