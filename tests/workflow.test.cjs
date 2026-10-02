@@ -1558,7 +1558,7 @@ test('post scanner excludes reposts and never mistakes a quoted target for the o
   h.run(`document.querySelectorAll=()=>[postArticle('alice',123,{reposted:true}),postArticle('bob',124,{quotedAuthor:'alice'})];`);
   assert.equal(h.run("engagementPosts('alice').length"),0);
 });
-async function queueFailureFixture(settings,profile,posts){
+async function queueFailureFixture(settings,profile,posts,readiness={ok:true}){
   const h=harness('popup.js',{outreachMode:'staged_review',handles:'alice\nbob',requiredLikes:1,requiredComments:0,...settings});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
   h.run(`let visits=[],actions=[],now=Date.now();Date=class extends Date {static now(){return now}};
@@ -1566,7 +1566,7 @@ async function queueFailureFixture(settings,profile,posts){
     chrome.tabs.query=async()=>[{id:1,url:'https://x.com/home'}];
     chrome.tabs.update=async(id,o)=>visits.push(o.url);
     tabMessage=async(type,msg)=>{
-      if(type==='PROFILE_READY') return {ok:true};
+      if(type==='PROFILE_READY') return ${JSON.stringify(readiness)};
       if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:msg.handle,...${JSON.stringify(profile)}}};
       actions.push(msg.action+':'+msg.handle);
       if(msg.action==='posts')return {ok:true,posts:${JSON.stringify(posts)},loadedArticles:3};
@@ -1606,7 +1606,9 @@ for(const mode of ['staged_review','engage_follow']) test(`${mode} does not foll
   const h=await queueFailureFixture({outreachMode:mode}, {}, [{post:'https://x.com/alice/status/123',text:'A post'}]);
   assert.equal(h.state.runState,'paused');
   assert.equal(h.run("actions.some(a=>a.startsWith('follow:'))"),false);
-  assert.match(h.state['engagementOutcome:alice'].reason,/configured engagement is incomplete/);
+  assert.match(h.state['engagementOutcome:alice'].reason,/Insufficient eligible posts/);
+  assert.equal(h.state['engagementOutcome:alice'].state,'skipped');
+  assert.equal(h.run('visits.length'),2);
 });
 test('engage then follow mode blocks DM preparation and sending',async()=>{
   const h=harness('content.js',{outreachMode:'engage_follow'});
@@ -1846,4 +1848,42 @@ test('in-flight Chrome API rejection after reload is consumed and stops content 
   h.dispatchWindow('unhandledrejection',{reason:new Error('Extension context invalidated.'),preventDefault(){prevented=true}});
   assert.equal(prevented,true);
   assert.equal(h.run('stoppedTimers'),2);
+});
+
+for(const [kind,notice] of [['private','These posts are protected.'],['sensitive','Caution: This profile may include potentially sensitive content'],['no_posts',"@alice hasn’t posted"]]){
+  test(`${kind} notice is bound to the visible target profile and engagement mode`,async()=>{
+    const h=harness('content.js');suspendedProfileFixture(h);
+    h.ctx.noticeValue=notice;h.run('noticeText=noticeValue');
+    assert.equal((await h.message({type:'PROFILE_READY',handle:'alice',engagement:true})).engagementUnavailable,kind);
+    assert.equal((await h.message({type:'PROFILE_READY',handle:'bob',engagement:true})).engagementUnavailable,undefined);
+    assert.equal((await h.message({type:'PROFILE_READY',handle:'alice'})).engagementUnavailable,undefined);
+    for(const change of ['shown=false','shown=true;excluded=true']){
+      h.run(change);
+      assert.equal((await h.message({type:'PROFILE_READY',handle:'alice',engagement:true})).engagementUnavailable,undefined);
+    }
+  });
+  test(`${kind} profile is marked and the queue advances without input`,async()=>{
+    const h=await queueFailureFixture({}, {}, [], {ok:false,engagementUnavailable:kind,reason:notice});
+    assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice','https://x.com/bob']));
+    assert.equal(h.run('actions.length'),0);
+    assert.equal(h.state['engagementOutcome:alice'].state,'skipped');
+    assert.equal(h.state.profiles.alice.engagementSkipReason,notice);
+    assert.equal(h.state.profiles.alice.contacted,undefined);
+  });
+}
+test('insufficient eligible posts skip and advance with confirmed actions preserved',async()=>{
+  const h=await queueFailureFixture({requiredLikes:2}, {}, [{post:'https://x.com/alice/status/1',text:'Hello'}]);
+  assert.equal(h.run('visits.length'),2);
+  assert.equal(h.state['engagementOutcome:alice'].state,'skipped');
+  assert.match(h.state['engagementOutcome:alice'].reason,/Insufficient eligible posts/);
+  assert.equal(h.run("actions.includes('follow:alice')"),false);
+});
+
+test('resuming engagement retains saved skips without reopening those profiles',async()=>{
+  const h=await queueFailureFixture({}, {}, []);
+  h.run('visits=[];actions=[]');
+  await h.element('start').onclick();
+  for(let i=0;i<10;i++) await new Promise(setImmediate);
+  assert.equal(h.run('visits.length'),0);
+  assert.equal(h.state['engagementOutcome:alice'].state,'skipped');
 });

@@ -1,4 +1,4 @@
-const CONTENT_BUILD = '1.9.36';
+const CONTENT_BUILD = '1.9.37';
 let prepareStartupTimer=null,prepareResumeTimer=null;
 function extensionContextInvalidated(error){
   return /extension context invalidated/i.test(String(error?.message||error||''));
@@ -553,6 +553,19 @@ function suspendedAccountNotice(handle){
   if(!handle || location.pathname.replace(/\/$/,'').toLowerCase()!=='/'+normHandle(handle)) return '';
   return accountNotice(/^account suspended[.!]?$/i);
 }
+function engagementAvailability(handle){
+  if(!handle || location.pathname.replace(/\/$/,'').toLowerCase()!=='/'+normHandle(handle)) return null;
+  const cases=[
+    ['private', /^(?:these (?:posts|tweets) are protected|this account(?:’s|'s) (?:posts|tweets) are protected|this account is private)[.!]?$/i],
+    ['sensitive', /^(?:caution: this (?:profile|account) may include potentially sensitive content|this (?:profile|account) may (?:include|contain) (?:potentially )?sensitive content)[.!]?$/i],
+    ['no_posts', /^(?:@[A-Za-z0-9_]+ hasn[’']t (?:posted|tweeted)|(?:this account|[A-Za-z0-9_]+) hasn[’']t (?:posted|tweeted)|no (?:posts|tweets)(?: yet)?)[.!]?$/i]
+  ];
+  for(const [kind,pattern] of cases){
+    const notice=accountNotice(pattern);
+    if(notice) return {kind,reason:notice};
+  }
+  return null;
+}
 function checkUnusableAccount(handle){
   // Bind the notice to the requested profile so another SPA route cannot mark this recipient.
   if(!handle || location.pathname.replace(/\/$/,'').toLowerCase()!=='/'+normHandle(handle)) return;
@@ -576,7 +589,7 @@ async function markUnusableAccount(job,reason,processingStatus){
 }
 
 let readinessSample={};
-function profileReadiness(handle){
+function profileReadiness(handle,engagement=false){
   const path=location.pathname.replace(/\/$/,'');
   const name=txt('[data-testid="UserName"]');
   const sameProfile=path.toLowerCase()==='/'+normHandle(handle);
@@ -585,6 +598,8 @@ function profileReadiness(handle){
   if(suspended) return {ok:false,accountSuspended:true,handle:normHandle(handle),version:CONTENT_BUILD,reason:suspended};
   const notice=sameProfile && missingAccountNotice();
   if(notice) return {ok:false,accountNotFound:true,handle:normHandle(handle),version:CONTENT_BUILD,reason:notice};
+  const unavailable=engagement && engagementAvailability(handle);
+  if(unavailable) return {ok:false,engagementUnavailable:unavailable.kind,reason:unavailable.reason};
   const signature=JSON.stringify([path,name,txt('[data-testid="UserDescription"]'),countFrom('following'),countFrom('followers'),txt('span[data-testid="UserLocation"]')]);
   if(signature!==readinessSample.signature) readinessSample={signature,since:Date.now()};
   const ok=sameProfile && !!name && document.readyState!=='loading' && Date.now()-readinessSample.since>=1500;
@@ -598,7 +613,7 @@ async function checkAutomaticSend(){
 
 chrome.runtime.onMessage.addListener((msg,sender,send)=>{
   if(msg.type==='PING'){send({ok:true,version:CONTENT_BUILD,url:location.href,title:document.title,debug:domDebug()});return true}
-  if(msg.type==='PROFILE_READY'){send(profileReadiness(msg.handle));return true}
+  if(msg.type==='PROFILE_READY'){send(profileReadiness(msg.handle,msg.engagement));return true}
   if(msg.type==='COLLECT_PROFILE'){
     (async()=>{try{
       const handle=msg.handle||normHandle(location.pathname.split('/')[1]);

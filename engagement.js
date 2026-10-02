@@ -79,6 +79,10 @@ async function executeEngagement(job){
   engagementBusy=true;
   try{
     await engagementGuard(job);
+    if(job.action==='posts'){
+      const unavailable=engagementAvailability(job.handle);
+      if(unavailable) return {ok:true,posts:[],loadedArticles:0,engagementUnavailable:unavailable.kind,reason:unavailable.reason};
+    }
     if(job.action==='posts') return {ok:true,posts:engagementPosts(job.handle).map(({post,text})=>({post,text})),loadedArticles:document.querySelectorAll('article[data-testid="tweet"]').length};
     if(job.action==='follow'){
       const result=await ensureFollowingOnPage(job.handle,job);

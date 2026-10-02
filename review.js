@@ -26,12 +26,19 @@ async function runEngagementQueue(){
       return s;
     };
     let activeHandle='';
+    const skip=async(handle,reason)=>{
+      await saveProfile({handle},{engagementStatus:'skipped',engagementSkipReason:reason});
+      await saveEngagementOutcome(handle,'skipped',reason);
+      status(`Skipped @${handle}: ${reason}`);
+      await renderReview();
+    };
     const totals={completed:0,filtered:0,already:0,unavailable:0,noPosts:0};
     try{
       if(!runId||initial.runState!=='running'||!reviewMode(initial)) return;
       const profiles=await db();
       for(const handle of parseHandles(initial.handles).map(profileKey)){
         let s=await live();
+        if(s[ENGAGEMENT_OUTCOME_PREFIX+handle]?.state==='skipped'){totals.unavailable++;continue}
         if(engagementComplete(s,handle)){totals.already++;await saveEngagementOutcome(handle,'complete','Configured engagement already confirmed.');continue}
         if(['contacted','account_not_found','account_suspended'].includes(profiles[handle]?.processingStatus)){
           totals.unavailable++;await saveEngagementOutcome(handle,'skipped','Saved profile status: '+profiles[handle].processingStatus);continue;
@@ -42,13 +49,15 @@ async function runEngagementQueue(){
         status(`Opening @${handle} for automatic engagement…`);
         await chrome.tabs.update(s.workflowTabId,{url:'https://x.com/'+encodeURIComponent(handle)});
         const end=Date.now()+PROFILE_LOAD_MS;
-        let ready=false;
+        let ready=false,unavailable=null;
         while(Date.now()<end){
           await reviewSleep(1000);await live();
-          const r=await tabMessage('PROFILE_READY',{handle});
+          const r=await tabMessage('PROFILE_READY',{handle,engagement:true});
+          if(r.engagementUnavailable){unavailable=r;break}
           if(r.accountNotFound||r.accountSuspended){await saveProfile({handle},{processingStatus:r.accountSuspended?'account_suspended':'account_not_found'});break}
           if(r.ok){ready=true;break}
         }
+        if(unavailable){totals.noPosts++;await skip(handle,unavailable.reason);continue}
         if(!ready){
           if(['account_not_found','account_suspended'].includes((await db())[handle]?.processingStatus)){totals.unavailable++;await saveEngagementOutcome(handle,'skipped','X reports the account is unavailable.');continue;}
           throw new Error(`Profile @${handle} did not load. Refresh X and resume.`);
@@ -68,19 +77,18 @@ async function runEngagementQueue(){
         };
         s=await live();
         if(s.outreachMode!=='follow_review'&&!postEngagementComplete(s,handle)){
-          let posts=[],loadedArticles=0;
+          let posts=[],loadedArticles=0,scanReason='';
           status(`Waiting for original posts by @${handle}…`);
           for(let attempt=0;attempt<30;attempt++){
             const scan=await action('posts');posts=scan.posts;loadedArticles=scan.loadedArticles??0;
+            if(scan.engagementUnavailable){scanReason=scan.reason;break}
             if(posts.length) break;
             await reviewSleep(1000);
           }
           if(!posts.length&&!postEngagementComplete(await live(),handle)){
             totals.noPosts++;
-            const reason=`No eligible original posts found among ${loadedArticles} loaded articles. Nothing is available to like or comment on right now.`;
-            await saveEngagementOutcome(handle,'skipped',reason);
-            status(`Skipped @${handle}: ${reason}`);
-            await renderReview();
+            const reason=scanReason||`No eligible original posts found among ${loadedArticles} loaded articles. Nothing is available to like or comment on right now.`;
+            await skip(handle,reason);
             continue;
           }
           for(const post of posts){
@@ -101,7 +109,11 @@ async function runEngagementQueue(){
             }
             if(postEngagementComplete(await live(),handle)) break;
           }
-          if(!postEngagementComplete(await live(),handle)) throw new Error(`@${handle}: configured engagement is incomplete after checking ${posts.length} eligible loaded posts. Queue paused on this profile; confirmed actions are saved. Load more original posts or adjust the required counts, then resume.`);
+          if(!postEngagementComplete(await live(),handle)){
+            totals.noPosts++;
+            await skip(handle,`Insufficient eligible posts to complete configured engagement after checking ${posts.length} loaded posts. Confirmed actions are saved.`);
+            continue;
+          }
         }
         status(`Following @${handle} and checking X confirmation…`);
         await action('follow');
