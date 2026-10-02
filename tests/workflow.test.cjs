@@ -1218,8 +1218,8 @@ function loadReview(h){
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','review.js'),'utf8'),h.ctx);
 }
 
-for(const mode of ['staged_review','engage_follow']) test(`${mode} likes and comments before following then advances`,async()=>{
-  const h=harness('popup.js',{outreachMode:mode,handles:'alice\nbob',requiredLikes:1,requiredComments:1,apiKey:'test-key'});
+for(const mode of ['staged_review','engage_follow']) test(`${mode} finishes likes, then comments, then follows and advances`,async()=>{
+  const h=harness('popup.js',{outreachMode:mode,handles:'alice\nbob',requiredLikes:2,requiredComments:1,apiKey:'test-key'});
   await new Promise(setImmediate);loadReview(h);await new Promise(setImmediate);
   h.run(`let visits=[],actions=[],now=Date.now();Date=class extends Date {static now(){return now}};
     setTimeout=fn=>{now+=2000;fn();return 0};
@@ -1230,7 +1230,7 @@ for(const mode of ['staged_review','engage_follow']) test(`${mode} likes and com
       if(type==='PROFILE_READY') return {ok:true};
       if(type==='COLLECT_PROFILE') return {ok:true,profile:{handle:msg.handle}};
       actions.push(msg.action+':'+msg.handle);
-      if(msg.action==='posts')return {ok:true,posts:[{post:'https://x.com/'+msg.handle+'/status/123',text:'A post'}]};
+      if(msg.action==='posts')return {ok:true,posts:[{post:'https://x.com/'+msg.handle+'/status/123',text:'First post'},{post:'https://x.com/'+msg.handle+'/status/456',text:'Second post'}]};
       const key=ENGAGEMENT_PREFIX+msg.handle,s=await chrome.storage.local.get(key);
       await chrome.storage.local.set({[key]:[...(s[key]||[]),{type:msg.action,post:msg.post||'',confirmed:true,at:Date.now()}]});
       return {ok:true};
@@ -1238,9 +1238,9 @@ for(const mode of ['staged_review','engage_follow']) test(`${mode} likes and com
   await h.element('start').onclick();
   for(let i=0;i<10;i++) await new Promise(setImmediate);
   assert.equal(h.run('JSON.stringify(visits)'),JSON.stringify(['https://x.com/alice','https://x.com/bob']));
-  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['posts:alice','like:alice','comment:alice','follow:alice','posts:bob','like:bob','comment:bob','follow:bob']));
+  assert.equal(h.run('JSON.stringify(actions)'),JSON.stringify(['posts:alice','like:alice','like:alice','comment:alice','follow:alice','posts:bob','like:bob','like:bob','comment:bob','follow:bob']));
   assert.equal(h.state.runState,'paused');
-  assert.equal(h.state['engagement:bob'].length,3);
+  assert.equal(h.state['engagement:bob'].length,4);
 });
 
 test('toolbar Start hands an automatic job to the side panel',async()=>{
