@@ -7,7 +7,7 @@
 <p class="sub">Likes and comments count distinct posts; set either count to 0 to skip it. Comments require an OpenAI API key. The DM wait applies only to staged DMs, starts at the first confirmed action, and requires a confirmed follow and approval.</p>
 <label>Timeline matches<select id="timelineMonitoring"><option value="off">Off</option><option value="on">Highlight matching authors while I browse</option></select></label>
 <input id="reviewHandle" type="hidden"><div class="buttons"><button id="reviewNext">Start automatic engagement</button></div>
-<p id="engagementStatus" class="sub"></p><div id="reviewQueue"></div>
+<p id="engagementStatus" class="sub"></p><div id="reviewQueue" role="region" aria-label="Profile queue" tabindex="0"></div>
 </fieldset>
 <fieldset class="draft-options"><legend>Profile and follower review</legend>
 <label>Location filter<select id="usaOnly"><option value="on" selected>USA only</option><option value="off">Any location</option></select></label>

@@ -6,3 +6,6 @@ body.sidepanel{width:auto;min-width:0;height:100vh;overflow:auto}.sidepanel .wra
 .toggle{display:flex;align-items:center;gap:8px;font-size:13px}.toggle input{width:auto;margin:0;accent-color:#9ad}
 
 .draft-options{border:1px solid #34343b;border-radius:8px;margin:14px 0;padding:10px;min-width:0}.draft-options legend{font-size:13px;color:#ccc}select{box-sizing:border-box;width:100%;margin-top:5px;background:#17171b;border:1px solid #34343b;color:#fff;border-radius:8px;padding:9px}
+
+#reviewQueue:not(:empty){max-height:320px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 8px;border:1px solid #2b2b31;border-radius:8px;background:#101014}
+#reviewQueue .sub{margin:8px 0}
